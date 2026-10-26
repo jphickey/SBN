@@ -36,8 +36,8 @@ void Test_Pack(void)
     UtAssert_True(SBN_Pack_Int16(&Pack, (int16)-2), "pack int16");                               // 6 bytes
     UtAssert_True(SBN_Pack_UInt32(&Pack, (uint32)3), "pack uint32");                             // 10 bytes
     UtAssert_True(SBN_Pack_MsgID(&Pack, CFE_SB_ValueToMsgId(0xdead)), "pack msgid");             // 14 bytes
-    UtAssert_True(SBN_Pack_Time(&Pack, OS_TimeAssembleFromMicroseconds(0xa, 0xb)), "pack time"); // 22 bytes
-    UtAssert_True(!SBN_Pack_Time(&Pack, OS_TimeAssembleFromMicroseconds(0xa, 0xb)),
+    UtAssert_True(SBN_Pack_Time(&Pack, 123456), "pack time");                        // 22 bytes
+    UtAssert_True(!SBN_Pack_Time(&Pack, 123456),
                   "pack time 2"); // should fail, out of space
 
     UtAssert_UINT32_EQ(SBN_Pack_GetPosition(&Pack), sizeof(Buf));

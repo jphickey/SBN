@@ -46,8 +46,10 @@
  */
 
 #include <stdlib.h> /* size_t */
-#include "cfe.h"
+
+#include "common_types.h"
 #include "cfe_endian.h"
+#include "sbn_types.h"
 
 /*
  * About the pack structs:
