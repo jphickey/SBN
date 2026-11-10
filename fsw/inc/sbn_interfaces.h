@@ -96,6 +96,15 @@ typedef struct
     SBN_SpacecraftID_t PeerSpacecraftID;
 } SBN_Filter_Ctx_t;
 
+typedef struct SBN_IntfCounts
+{
+    SBN_HkCounter_t SendCnt;
+    SBN_HkCounter_t RecvCnt;
+    SBN_HkCounter_t SendErrCnt;
+    SBN_HkCounter_t RecvErrCnt;
+} SBN_IntfCounts_t;
+
+
 typedef struct
 {
     /**
@@ -165,18 +174,6 @@ struct SBN_PeerInterface_s
 
     SBN_Task_Flag_t TaskFlags;
 
-    /**
-     * @brief The ID of the task created to pend on the pipe and send messages
-     * to the net as soon as they are read. 0 if there is no send task.
-     */
-    CFE_ES_TaskId_t SendTaskID;
-
-    /**
-     * @brief The ID of the task created to pend on the net and send messages
-     * to the software bus as soon as they are read. 0 if there is no recv task.
-     */
-    CFE_ES_TaskId_t RecvTaskID; /* for mesh nets */
-
     /** @brief The pipe ID used to read messages destined for the peer. */
     CFE_SB_PipeId_t Pipe;
 
@@ -185,6 +182,7 @@ struct SBN_PeerInterface_s
      * Includes one extra entry for a null termination.
      */
     SBN_Subs_t Subs[SBN_MISSION_MAX_SUBS_PER_PEER + 1];
+    SBN_SubCnt_t SubCnt;
 
     /**
      * @brief Filters alter message headers/bodies before sending to a peer or after
@@ -194,7 +192,7 @@ struct SBN_PeerInterface_s
     SBN_ModuleIdx_t              FilterCnt;
 
     OS_time_t       LastSend, LastRecv;
-    SBN_HkCounter_t SendCnt, RecvCnt, SendErrCnt, RecvErrCnt, SubCnt;
+    SBN_IntfCounts_t Counts;
 
     bool Connected;
 
@@ -214,14 +212,8 @@ struct SBN_NetInterface_s
 
     SBN_Task_Flag_t TaskFlags;
 
-    /* For some network topologies, this application only needs one connection
-     * to communicate to peers. These tasks are used for those networks. ID's
-     * are 0 if there is no task.
-     */
-    CFE_ES_TaskId_t SendTaskID;
+    /* JPHFIX: This doesn't seem right */
     osal_id_t       SendMutex;
-
-    CFE_ES_TaskId_t RecvTaskID;
 
     const SBN_IfOps_t *IfOps; /* convenience */
 

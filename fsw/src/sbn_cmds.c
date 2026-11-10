@@ -23,7 +23,7 @@
 #include "sbn_app.h"
 #include "sbn_encode.h"
 
-static SBN_NetInterface_t *SBN_GetNetIfFromIdx(SBN_NetIdx_t Idx)
+static SBN_NetContainer_t *SBN_GetNetIfFromIdx(SBN_NetIdx_t Idx)
 {
     SBN_NetInterface_t *Net;
 
@@ -36,7 +36,7 @@ static SBN_NetInterface_t *SBN_GetNetIfFromIdx(SBN_NetIdx_t Idx)
     return Net;
 }
 
-static SBN_PeerInterface_t *SBN_GetPeerFromIdx(SBN_NetInterface_t *NetIf, SBN_PeerIdx_t Idx)
+static SBN_PeerInterface_t *SBN_GetPeerFromIdx(SBN_NetContainer_t *NetIf, SBN_PeerIdx_t Idx)
 {
     SBN_PeerInterface_t *Peer;
 
@@ -231,7 +231,7 @@ CFE_Status_t SBN_SendHkCmd(const SBN_SendHkCmd_t *MsgPtr)
 CFE_Status_t SBN_SendHkNetCmd(const SBN_SendHkNetCmd_t *MsgPtr)
 {
     const SBN_NetCmd_Payload_t *CmdPtr = &MsgPtr->Payload;
-    SBN_NetInterface_t         *NetIf;
+    SBN_NetContainer_t         *NetIf;
     SBN_TlmBase_t              *TlmBuf;
     SBN_HkNetTlm_t             *OutMsg;
 
@@ -262,8 +262,8 @@ CFE_Status_t SBN_SendHkNetCmd(const SBN_SendHkNetCmd_t *MsgPtr)
 
         OutMsg->TlmBase.TlmId = SBN_HK_NET_CC;
 
-        OutMsg->Payload.ProtocolIdx = NetIf->ProtocolIdx;
-        OutMsg->Payload.PeerCnt     = NetIf->PeerCnt;
+        OutMsg->Payload.ProtocolIdx = NetIf->Intf.ProtocolIdx;
+        OutMsg->Payload.PeerCnt     = NetIf->Intf.PeerCnt;
 
         /*
         ** Timestamp and send packet
@@ -322,10 +322,10 @@ CFE_Status_t SBN_SendHkPeerCmd(const SBN_SendHkPeerCmd_t *MsgPtr)
         OutMsg->Payload.ProcessorId = Peer->ProcessorID;
         OutMsg->Payload.LastSend    = OS_TimeGetTotalMicroseconds(Peer->LastSend);
         OutMsg->Payload.LastRecv    = OS_TimeGetTotalMicroseconds(Peer->LastRecv);
-        OutMsg->Payload.SendCnt     = Peer->SendCnt;
-        OutMsg->Payload.RecvCnt     = Peer->RecvCnt;
-        OutMsg->Payload.SendErrCnt  = Peer->SendErrCnt;
-        OutMsg->Payload.RecvErrCnt  = Peer->RecvErrCnt;
+        OutMsg->Payload.SendCnt     = Peer->Counts.SendCnt;
+        OutMsg->Payload.RecvCnt     = Peer->Counts.RecvCnt;
+        OutMsg->Payload.SendErrCnt  = Peer->Counts.SendErrCnt;
+        OutMsg->Payload.RecvErrCnt  = Peer->Counts.RecvErrCnt;
         OutMsg->Payload.SubCnt      = Peer->SubCnt;
 
         /*

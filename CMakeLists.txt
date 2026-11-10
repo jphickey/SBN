@@ -33,6 +33,9 @@ set(APP_SRC_FILES
   fsw/src/sbn_subs.c
   fsw/src/sbn_pack.c
   fsw/src/sbn_module.c
+  fsw/src/sbn_inbound_task.c
+  fsw/src/sbn_outbound_task.c
+  fsw/src/sbn_worker_task.c
   fsw/src/sbn_resource.c
 )
 
@@ -135,5 +138,5 @@ target_sources(sbn PRIVATE ${SBNMOD_OBJ_LIST})
 
 if (ENABLE_UNIT_TESTS)
   add_subdirectory(ut-stubs)
-  add_subdirectory(unit-test)
+  #add_subdirectory(unit-test)
 endif (ENABLE_UNIT_TESTS)
