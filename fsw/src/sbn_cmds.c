@@ -25,30 +25,33 @@
 
 static SBN_NetInterface_t *SBN_GetNetIfFromIdx(SBN_NetIdx_t Idx)
 {
-    if (Idx >= SBN_AppData.NetCnt)
+    SBN_NetInterface_t *Net;
+
+    Net = SBN_LocateNetIntfByIndex(Idx);
+    if (Net == NULL)
     {
-        EVSSendErr(SBN_CMD_EID, "Invalid NetIdx %d (max=%d)", Idx, SBN_AppData.NetCnt);
-        return NULL;
+        EVSSendErr(SBN_CMD_EID, "Invalid NetIdx %d (max=%d)", Idx, SBN_PLATFORM_MAX_NETS);
     }
 
-    return &SBN_AppData.Nets[Idx];
+    return Net;
 }
 
 static SBN_PeerInterface_t *SBN_GetPeerFromIdx(SBN_NetInterface_t *NetIf, SBN_PeerIdx_t Idx)
 {
+    SBN_PeerInterface_t *Peer;
+
     /* Note that the netif + peer lookup is often combined, so its easier to pass thru a prior error */
-    if (NetIf == NULL)
+    Peer = NULL;
+    if (NetIf != NULL)
     {
-        return NULL;
+        Peer = SBN_LocatePeertIntfInNet(NetIf, Idx);
+        if (Peer == NULL)
+        {
+            EVSSendErr(SBN_CMD_EID, "Invalid PeerIdx %d (max=%d)", Idx, NetIf->PeerCnt);
+        }
     }
 
-    if (Idx >= NetIf->PeerCnt)
-    {
-        EVSSendErr(SBN_CMD_EID, "Invalid PeerIdx %d (max=%d)", Idx, NetIf->PeerCnt);
-        return NULL;
-    }
-
-    return &NetIf->Peers[Idx];
+    return Peer;
 }
 
 static void SBN_TransmitBuffer(SBN_TlmBase_t *TlmBuf)
@@ -203,7 +206,7 @@ CFE_Status_t SBN_SendHkCmd(const SBN_SendHkCmd_t *MsgPtr)
         OutMsg->Payload.CmdCnt    = SBN_AppData.CmdCnt;
         OutMsg->Payload.CmdErrCnt = SBN_AppData.CmdErrCnt;
         OutMsg->Payload.SubCnt    = SBN_AppData.SubCnt;
-        OutMsg->Payload.NetCnt    = SBN_AppData.NetCnt;
+        OutMsg->Payload.NetCnt    = SBN_AppData.ActiveNetCount;
 
         /*
         ** Timestamp and send packet

@@ -338,15 +338,27 @@ int32 SymLookHook(void *UserObj, int32 StubRetcode, uint32 CallCount, const UT_S
 
 void START_fn(const char *func, int line)
 {
+    SBN_NetRecord_t  *NetRec;
+    SBN_PeerRecord_t *PeerRec;
+
     UT_ResetState(0);
     printf("Start item %s (%d)\n", func, line);
     memset(&SBN_AppData, 0, sizeof(SBN_AppData));
 
-    NetPtr                = &SBN_AppData.Nets[0];
-    SBN_AppData.NetCnt    = 1;
-    NetPtr->PeerCnt       = 1;
-    NetPtr->Configured    = 1;
-    PeerPtr               = &NetPtr->Peers[0];
+    NetRec        = &SBN_AppData.NetRecords[0];
+    NetRec->NetId = SBN_NETID_C(CFE_ResourceId_FromInteger(SBN_PLATFORM_MAX_NETS));
+
+    PeerRec         = &SBN_AppData.PeerRecords[0];
+    PeerRec->PeerId = SBN_PEERID_C(CFE_ResourceId_FromInteger(2 * SBN_MISSION_MAX_PEER_CNT));
+    PeerRec->NetId  = NetRec->NetId;
+
+    NetPtr  = &NetRec->Intf;
+    PeerPtr = &PeerRec->Intf;
+
+    NetPtr->PeerCnt    = 1;
+    NetPtr->Configured = 1;
+    NetPtr->PeerIds[0] = PeerRec->PeerId;
+
     PeerPtr->ProcessorID  = ProcessorID;
     PeerPtr->SpacecraftID = SpacecraftID;
     PeerPtr->Net          = NetPtr;

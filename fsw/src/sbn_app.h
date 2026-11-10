@@ -40,6 +40,8 @@
 
 #include "cfe_platform_cfg.h"
 
+#include "sbn_resource.h"
+
 /* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 /*                                                                 */
 /* SBN application data structures                                 */
@@ -63,10 +65,8 @@ typedef struct
  */
 typedef struct
 {
-    SBN_NetIdx_t NetCnt;
-
-    /** \brief Data only on host definitions. */
-    SBN_NetInterface_t Nets[SBN_PLATFORM_MAX_NETS];
+    SBN_PeerRecord_t PeerRecords[SBN_MISSION_MAX_PEER_CNT];
+    SBN_NetRecord_t  NetRecords[SBN_PLATFORM_MAX_NETS];
 
     /** \brief The application ID provided by ES */
     CFE_ES_AppId_t AppID;
@@ -115,6 +115,10 @@ typedef struct
 
     CFE_TBL_Handle_t ConfTblHandle;
 
+    CFE_ResourceId_t LastPeerId;
+    CFE_ResourceId_t LastNetId;
+    SBN_NetIdx_t     ActiveNetCount;
+
     /* Buffer for receiving messages, allocated here to avoid stack smashing */
     uint8 MsgBuffer[CFE_MISSION_SB_MAX_SB_MSG_SIZE];
 } SBN_AppData_t;
@@ -132,8 +136,8 @@ typedef struct
 {
     SBN_Status_t         Status;
     CFE_ES_TaskId_t      RecvTaskID;
-    SBN_PeerIdx_t        PeerIdx;
-    SBN_NetIdx_t         NetIdx;
+    SBN_PeerId_t         PeerId;
+    SBN_NetId_t          NetId;
     SBN_PeerInterface_t *Peer;
     SBN_NetInterface_t  *Net;
     SBN_ProcessorID_t    ProcessorID;
@@ -145,7 +149,7 @@ typedef struct
 
 typedef struct
 {
-    SBN_NetIdx_t         NetIdx;
+    SBN_NetId_t          NetId;
     SBN_NetInterface_t  *Net;
     SBN_PeerInterface_t *Peer;
     SBN_Status_t         Status;
@@ -160,8 +164,8 @@ typedef struct
 typedef struct
 {
     SBN_Status_t         Status;
-    SBN_NetIdx_t         NetIdx;
-    SBN_PeerIdx_t        PeerIdx;
+    SBN_NetId_t          NetId;
+    SBN_PeerId_t         PeerId;
     CFE_ES_TaskId_t      SendTaskID;
     CFE_MSG_Message_t   *MsgPtr;
     CFE_SB_MsgId_t       MsgID;

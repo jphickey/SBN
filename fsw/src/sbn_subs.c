@@ -167,6 +167,22 @@ static int IsPeerSubMsgID(int *SubIdxPtr, CFE_SB_MsgId_t MsgID, SBN_PeerInterfac
 
 } /* end IsPeerSubMsgID */
 
+static SBN_Status_t SBN_DoSendLocalSubToPeer(SBN_PeerRecord_t *PeerRec, void *Arg)
+{
+    SBN_Subs_t          *Subs = Arg;
+    SBN_PeerInterface_t *Peer;
+
+    Peer = &PeerRec->Intf;
+
+    EVSSendDbg(SBN_PEER_EID,
+               "process local sub for MID %#04x sending to %d:%d",
+               CFE_SB_MsgIdToValue(Subs->MsgID),
+               Peer->SpacecraftID,
+               Peer->ProcessorID);
+
+    return SBN_SendLocalSubToPeer(SBN_SUB_MSG, Subs->MsgID, Subs->QoS, Peer);
+}
+
 /**
  * \brief I have seen a local subscription, send it on to peers if this is the
  * first instance of a subscription for this message ID.
@@ -176,7 +192,9 @@ static int IsPeerSubMsgID(int *SubIdxPtr, CFE_SB_MsgId_t MsgID, SBN_PeerInterfac
  */
 static SBN_Status_t ProcessLocalSub(CFE_SB_MsgId_t MsgID, CFE_SB_Qos_t QoS)
 {
-    SBN_Status_t          SBN_Status          = SBN_SUCCESS;
+    SBN_Status_t Status;
+    int          SubIdx = 0;
+
     static CFE_SB_MsgId_t LCMD_MID            = CFE_SB_MSGID_RESERVED;
     static CFE_SB_MsgId_t LHK_TLM_MID         = CFE_SB_MSGID_RESERVED;
     static CFE_SB_MsgId_t LHKNET_TLM_MID      = CFE_SB_MSGID_RESERVED;
@@ -207,8 +225,6 @@ static SBN_Status_t ProcessLocalSub(CFE_SB_MsgId_t MsgID, CFE_SB_Qos_t QoS)
         || CFE_SB_MsgId_Equal(MsgID, LHKMYSUBS_TLM_MID) || CFE_SB_MsgId_Equal(MsgID, LHKPEERSUBS_TLM_MID))
         return SBN_SUCCESS;
 
-    int SubIdx = 0;
-
     /* if there is already an entry for this msg id,just incr InUseCtr */
     if (IsMsgIDSub(&SubIdx, MsgID))
     {
@@ -231,32 +247,24 @@ static SBN_Status_t ProcessLocalSub(CFE_SB_MsgId_t MsgID, CFE_SB_Qos_t QoS)
     SBN_AppData.Subs[SBN_AppData.SubCnt].InUseCtr = 1;
     SBN_AppData.Subs[SBN_AppData.SubCnt].MsgID    = MsgID;
     SBN_AppData.Subs[SBN_AppData.SubCnt].QoS      = QoS;
+
+    Status = SBN_ForEachConfiguredPeer(SBN_DoSendLocalSubToPeer, &SBN_AppData.Subs[SBN_AppData.SubCnt]);
+
     SBN_AppData.SubCnt++;
 
-    int NetIdx, PeerIdx;
-    for (NetIdx = 0; NetIdx < SBN_AppData.NetCnt; NetIdx++)
-    {
-        SBN_NetInterface_t *Net = &SBN_AppData.Nets[NetIdx];
-        for (PeerIdx = 0; PeerIdx < Net->PeerCnt; PeerIdx++)
-        {
-            SBN_PeerInterface_t *Peer = &Net->Peers[PeerIdx];
-
-            EVSSendDbg(SBN_PEER_EID,
-                       "process local sub for MID %#04x sending to %d:%d",
-                       CFE_SB_MsgIdToValue(MsgID),
-                       Peer->SpacecraftID,
-                       Peer->ProcessorID);
-            SBN_Status = SBN_SendLocalSubToPeer(SBN_SUB_MSG, MsgID, QoS, Peer);
-
-            if (SBN_Status != SBN_SUCCESS)
-            {
-                return SBN_Status;
-            } /* end if */
-        } /* end for */
-    } /* end for */
-
-    return SBN_Status;
+    return Status;
 } /* end ProcessLocalSub */
+
+static SBN_Status_t SBN_DoSendLocalUnsubToPeer(SBN_PeerRecord_t *PeerRec, void *Arg)
+{
+    SBN_Subs_t          *Subs = Arg;
+    SBN_PeerInterface_t *Peer;
+
+    Peer = &PeerRec->Intf;
+
+    EVSSendInfo(SBN_PEER_EID, "process local unsub %d:%d", Peer->SpacecraftID, Peer->ProcessorID);
+    return SBN_SendLocalSubToPeer(SBN_UNSUB_MSG, Subs->MsgID, Subs->QoS, Peer);
+}
 
 /**
  * \brief I have seen a local unsubscription, send it on to peers if this is the
@@ -266,8 +274,8 @@ static SBN_Status_t ProcessLocalSub(CFE_SB_MsgId_t MsgID, CFE_SB_Qos_t QoS)
  */
 static SBN_Status_t ProcessLocalUnsub(CFE_SB_MsgId_t MsgID)
 {
-    SBN_Status_t SBN_Status;
     int          SubIdx;
+    SBN_Status_t Status;
 
     /* find idx of matching subscription */
     if (!IsMsgIDSub(&SubIdx, MsgID))
@@ -285,6 +293,8 @@ static SBN_Status_t ProcessLocalUnsub(CFE_SB_MsgId_t MsgID)
         return SBN_SUCCESS;
     } /* end if */
 
+    Status = SBN_ForEachConfiguredPeer(SBN_DoSendLocalUnsubToPeer, &SBN_AppData.Subs[SubIdx]);
+
     /* remove sub from array for and
     ** shift all subscriptions in higher elements to fill the gap
     ** note that the Subs[] array has one extra element to allow for an
@@ -297,30 +307,7 @@ static SBN_Status_t ProcessLocalUnsub(CFE_SB_MsgId_t MsgID)
 
     SBN_AppData.SubCnt--;
 
-    /* send unsubscription to all peers if peer state is heartbeating and */
-    /* only if no more local subs (InUseCtr = 0)  */
-    int NetIdx, PeerIdx;
-    for (NetIdx = 0; NetIdx < SBN_AppData.NetCnt; NetIdx++)
-    {
-        SBN_NetInterface_t *Net = &SBN_AppData.Nets[NetIdx];
-        for (PeerIdx = 0; PeerIdx < Net->PeerCnt; PeerIdx++)
-        {
-            SBN_PeerInterface_t *Peer = &Net->Peers[PeerIdx];
-
-            EVSSendInfo(SBN_PEER_EID, "process local unsub %d:%d", Peer->SpacecraftID, Peer->ProcessorID);
-            SBN_Status = SBN_SendLocalSubToPeer(SBN_UNSUB_MSG,
-                                                SBN_AppData.Subs[PeerIdx].MsgID,
-                                                SBN_AppData.Subs[PeerIdx].QoS,
-                                                Peer);
-
-            if (SBN_Status != SBN_SUCCESS)
-            {
-                return SBN_Status;
-            } /* end if */
-        } /* end for */
-    } /* end for */
-
-    return SBN_SUCCESS;
+    return Status;
 } /* end ProcessLocalUnsub */
 
 /**

@@ -345,44 +345,10 @@ static void AppMain_MutSemCrErr(void)
     EVENT_CNT(1);
 } /* end AppMain_MutSemCrErr() */
 
-/* Mock IfOps structure for testing */
-static SBN_Status_t Mock_UnloadNet(SBN_NetInterface_t *Net)
-{
-    return SBN_SUCCESS;
-}
-
-static SBN_Status_t Mock_InitNet(SBN_NetInterface_t *Net)
-{
-    return SBN_SUCCESS;
-}
-
-static SBN_Status_t Mock_InitPeer(SBN_PeerInterface_t *Peer)
-{
-    return SBN_SUCCESS;
-}
-
-static SBN_IfOps_t MockIfOps = { .InitModule   = NULL,
-                                 .InitNet      = Mock_InitNet,
-                                 .InitPeer     = Mock_InitPeer,
-                                 .LoadNet      = NULL,
-                                 .LoadPeer     = NULL,
-                                 .PollPeer     = NULL,
-                                 .Send         = NULL,
-                                 .RecvFromNet  = NULL,
-                                 .RecvFromPeer = NULL,
-                                 .UnloadNet    = Mock_UnloadNet,
-                                 .UnloadPeer   = NULL };
-
 /* Hook function to modify SBN after SBN_LoadConf completes but before SBN_InitInterfaces */
 static int32 SetupNetConfErr_Hook(void *UserObj, int32 StubRetcode, uint32 CallCount, const UT_StubContext_t *Context)
 {
-    /* At this point SBN_LoadConf has completed, modify SBN to have an unconfigured network */
-    SBN_AppData.NetCnt = 1;
-    memset(&SBN_AppData.Nets[0], 0, sizeof(SBN_AppData.Nets[0]));
-    SBN_AppData.Nets[0].Configured = false;      /* This will trigger the error in SBN_InitInterfaces */
-    SBN_AppData.Nets[0].IfOps      = &MockIfOps; /* Prevent segfault in SBN_UnloadNets */
-    SBN_AppData.Nets[0].PeerCnt    = 0;          /* No peers */
-
+    memset(&SBN_AppData.NetRecords[0], 0, sizeof(SBN_AppData.NetRecords[0]));
     return StubRetcode;
 }
 
@@ -704,7 +670,7 @@ static void W4W_NoMsg(void)
 
 static int32 PeerConnHook(void *UserObj, int32 StubRetcode, uint32 CallCount, const UT_StubContext_t *Context)
 {
-    SBN_AppData.Nets[0].Peers[1].Connected = true;
+    SBN_AppData.PeerRecords[1].Intf.Connected = true;
     return ProcessorID;
 } /* end PeerConnHook() */
 
@@ -1100,8 +1066,6 @@ static void PeerPoll_RecvNetTask_Nominal(void)
      * - SBN_AppData.Nets[0].PeerCnt: 0 - Reset to ensure clean state for peer counting
      * - PeerPtr->Connected: 1 - Peer must be connected for task creation to be considered
      * - NominalTblPtr->Peers[0].TaskFlags: SBN_TASK_RECV - Enable network receive task creation */
-    SBN_AppData.NetCnt          = 0;
-    SBN_AppData.Nets[0].PeerCnt = 0;
 
     PeerPtr->Connected                = 1;
     NominalTblPtr->Peers[0].TaskFlags = SBN_TASK_RECV;
@@ -1254,8 +1218,6 @@ static void PeerPoll_RecvPeerTask_Nominal(void)
      * - NominalTblPtr->Peers[1].TaskFlags: SBN_TASK_RECV - Enable peer-level receive task creation
      * - IfOpsPtr->RecvFromPeer: RecvFromPeer_Nominal - Must be set to trigger peer task creation
      * - IfOpsPtr->RecvFromNet: NULL - Disables network-level receive task creation */
-    SBN_AppData.NetCnt          = 0;
-    SBN_AppData.Nets[0].PeerCnt = 0;
 
     PeerPtr->Connected                = 1;
     NominalTblPtr->Peers[1].TaskFlags = SBN_TASK_RECV;
@@ -1702,7 +1664,7 @@ static void Disconnected_ConnErr(void)
      * Peer Setup:
      * - PeerPtr->Connected: 0 (default) - Peer starts disconnected to trigger the error condition
      * - PeerPtr->ProcessorID: ProcessorID - Set for error message identification */
-    SBN_PeerInterface_t *PeerPtr = &SBN_AppData.Nets[0].Peers[0];
+    SBN_PeerInterface_t *PeerPtr = &SBN_AppData.PeerRecords[0].Intf;
 
     PeerPtr->ProcessorID = ProcessorID;
 
@@ -1721,7 +1683,7 @@ static void Disconnected_Nominal(void)
      * Peer Setup:
      * - PeerPtr->ProcessorID: ProcessorID - Set for event message identification
      * - PeerPtr->Connected: 1 - Pre-set peer as connected to allow valid disconnection */
-    SBN_PeerInterface_t *PeerPtr = &SBN_AppData.Nets[0].Peers[0];
+    SBN_PeerInterface_t *PeerPtr = &SBN_AppData.PeerRecords[0].Intf;
 
     PeerPtr->ProcessorID = ProcessorID;
     PeerPtr->Connected   = 1;
@@ -2332,7 +2294,7 @@ static int32 TaskDelayConn(void *UserObj, int32 StubRetcode, uint32 CallCount, c
 
     if (c++ > 0)
     {
-        SBN_AppData.Nets[0].Peers[0].Connected = true;
+        SBN_AppData.PeerRecords[0].Intf.Connected = true;
     } /* end if */
 
     return CFE_SUCCESS;

@@ -24,6 +24,41 @@
 #include "sbn_msg.h"
 #include "sbn_platform_cfg.h"
 #include "sbn_extern_typedefs.h"
+#include "cfe_resourceid.h"
+
+/**
+ * \brief  SBN Peer Id to primitive type definition
+ */
+typedef CFE_RESOURCEID_BASE_TYPE SBN_PeerId_t;
+
+/**
+ * \brief  SBN Net Id to primitive type definition
+ */
+typedef CFE_RESOURCEID_BASE_TYPE SBN_NetId_t;
+
+/**
+ * \brief Cast/Convert a generic CFE_ResourceId_t to a SBN_NetId_t
+ */
+#define SBN_NETID_C(val) ((SBN_NetId_t)CFE_RESOURCEID_WRAP(val))
+
+/**
+ * \brief Cast/Convert a generic CFE_ResourceId_t to a SBN_PeerId_t
+ */
+#define SBN_PEERID_C(val) ((SBN_PeerId_t)CFE_RESOURCEID_WRAP(val))
+
+/**
+ * \brief  A SBN_NetId_t value which is always invalid
+ *
+ * This may be used as a safe initializer for SBN_NetId_t values
+ */
+#define SBN_NETID_UNDEFINED SBN_NETID_C(CFE_RESOURCEID_UNDEFINED)
+
+/**
+ * \brief  A SBN_PeerId_t value which is always invalid
+ *
+ * This may be used as a safe initializer for SBN_PeerId_t values
+ */
+#define SBN_PEERID_UNDEFINED SBN_PEERID_C(CFE_RESOURCEID_UNDEFINED)
 
 typedef struct SBN_IfOps_s         SBN_IfOps_t;
 typedef struct SBN_NetInterface_s  SBN_NetInterface_t;
@@ -192,7 +227,7 @@ struct SBN_NetInterface_s
 
     SBN_PeerIdx_t PeerCnt;
 
-    SBN_PeerInterface_t Peers[SBN_MISSION_MAX_PEER_CNT];
+    SBN_PeerId_t PeerIds[SBN_MISSION_MAX_PEER_CNT];
 
     /**
      * @brief Filters alter message headers/bodies before sending to a peer or after

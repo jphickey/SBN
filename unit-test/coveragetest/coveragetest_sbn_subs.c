@@ -60,11 +60,11 @@ static void SLS2P_SendNetMsgErr(void)
     SBN_AppData.SubCnt        = 1;
     SBN_AppData.Subs[0].MsgID = MsgID;
 
-    SBN_AppData.Nets[0].Peers[1].Net = NetPtr;
+    SBN_AppData.PeerRecords[1].Intf.Net = NetPtr;
 
     IfOpsPtr->Send = Send_Err;
 
-    UtAssert_INT32_EQ(SBN_SendLocalSubsToPeer(&SBN_AppData.Nets[0].Peers[1]), SBN_ERROR);
+    UtAssert_INT32_EQ(SBN_SendLocalSubsToPeer(&SBN_AppData.PeerRecords[1].Intf), SBN_ERROR);
 
     IfOpsPtr->Send = Send_Nominal;
 } /* end SLS2P_SendNetMsgErr() */

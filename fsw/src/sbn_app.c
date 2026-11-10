@@ -234,6 +234,29 @@ SBN_Status_t SBN_Disconnected(SBN_PeerInterface_t *Peer)
     return SBN_SUCCESS;
 } /* end SBN_Disconnected() */
 
+SBN_Status_t SBN_MatchRecvPeerToTask(SBN_PeerRecord_t *PeerRec, void *Arg)
+{
+    SBN_RecvPeerTaskData_t *D = Arg;
+    SBN_NetRecord_t        *Net;
+
+    if (CFE_RESOURCEID_TEST_EQUAL(PeerRec->Intf.RecvTaskID, D->RecvTaskID))
+    {
+        Net = SBN_LocateNetRecordByID(PeerRec->NetId);
+
+        if (SBN_NetRecordIsMatch(Net, PeerRec->NetId))
+        {
+            D->Peer   = &PeerRec->Intf;
+            D->Net    = &Net->Intf;
+            D->PeerId = PeerRec->PeerId;
+            D->NetId  = PeerRec->NetId;
+
+            return SBN_FINISHED; /* just needs to be nonzero for iteration to stop */
+        }
+    }
+
+    return SBN_SUCCESS;
+}
+
 /**
  * \brief Receive task created for each direct peer-based connection.
  * Spanwed from SBN_PeerPoll()
@@ -245,30 +268,9 @@ void SBN_RecvPeerTask(void)
 
     CFE_ES_GetTaskID(&D.RecvTaskID);
 
-    for (D.NetIdx = 0; D.NetIdx < SBN_AppData.NetCnt; D.NetIdx++)
-    {
-        D.Net = &SBN_AppData.Nets[D.NetIdx];
-        if (!D.Net->Configured)
-        {
-            continue;
-        }
+    SBN_ForEachConfiguredPeer(SBN_MatchRecvPeerToTask, &D);
 
-        for (D.PeerIdx = 0; D.PeerIdx < D.Net->PeerCnt; D.PeerIdx++)
-        {
-            D.Peer = &D.Net->Peers[D.PeerIdx];
-            if (CFE_RESOURCEID_TEST_EQUAL(D.Peer->RecvTaskID, D.RecvTaskID))
-            {
-                break;
-            } /* end if */
-        } /* end for */
-
-        if (D.PeerIdx < D.Net->PeerCnt)
-        {
-            break;
-        } /* end if */
-    } /* end for */
-
-    if (D.NetIdx == SBN_AppData.NetCnt)
+    if (D.Peer == NULL)
     {
         EVSSendErr(SBN_PEERTASK_EID, "unable to connect task to peer struct");
         return;
@@ -307,6 +309,21 @@ void SBN_RecvPeerTask(void)
     } /* end while */
 } /* end SBN_RecvPeerTask() */
 
+SBN_Status_t SBN_MatchRecvNetToTask(SBN_NetRecord_t *NetRec, void *Arg)
+{
+    SBN_RecvNetTaskData_t *D = Arg;
+
+    if (CFE_RESOURCEID_TEST_EQUAL(NetRec->Intf.RecvTaskID, D->RecvTaskID))
+    {
+        D->Net   = &NetRec->Intf;
+        D->NetId = NetRec->NetId;
+
+        return SBN_FINISHED; /* just needs to be nonzero for iteration to stop */
+    }
+
+    return SBN_SUCCESS;
+}
+
 /**
  * \brief Receive task created for each net-based connection.
  * Spanwed from SBN_PeerPoll()
@@ -320,16 +337,9 @@ void SBN_RecvNetTask(void)
 
     CFE_ES_GetTaskID(&D.RecvTaskID);
 
-    for (D.NetIdx = 0; D.NetIdx < SBN_AppData.NetCnt; D.NetIdx++)
-    {
-        D.Net = &SBN_AppData.Nets[D.NetIdx];
-        if (CFE_RESOURCEID_TEST_EQUAL(D.Net->RecvTaskID, D.RecvTaskID))
-        {
-            break;
-        } /* end if */
-    } /* end for */
+    SBN_ForEachConfiguredNet(SBN_MatchRecvNetToTask, &D);
 
-    if (D.NetIdx == SBN_AppData.NetCnt)
+    if (D.Net == NULL)
     {
         EVSSendErr(SBN_PEERTASK_EID, "%s unable to connect task to net struct", FAIL_PREFIX_STARTUP);
         return;
@@ -351,7 +361,7 @@ void SBN_RecvNetTask(void)
             EVSSendErr(SBN_PEERTASK_EID,
                        "%s RecvFromNet failed for net %d: status=0x%08X",
                        FAIL_PREFIX_RUNNING,
-                       D.NetIdx,
+                       SBN_NetId_AsInt(D.NetId),
                        D.Status);
             break;
         } /* end if */
@@ -396,9 +406,13 @@ SBN_Status_t SBN_RecvNetMsgs(void)
     SBN_SpacecraftID_t   SpacecraftID;
     SBN_PeerIdx_t        PeerIdx;
 
-    for (NetIdx = 0; NetIdx < SBN_AppData.NetCnt; NetIdx++)
+    for (NetIdx = 0; NetIdx < SBN_PLATFORM_MAX_NETS; NetIdx++)
     {
-        Net = &SBN_AppData.Nets[NetIdx];
+        Net = SBN_LocateNetIntfByIndex(NetIdx);
+        if (Net == NULL || !Net->Configured)
+        {
+            continue;
+        }
         if (Net->TaskFlags & SBN_TASK_RECV)
         {
             continue; /* separate task handles receiving from a net */
@@ -444,7 +458,11 @@ SBN_Status_t SBN_RecvNetMsgs(void)
         {
             for (PeerIdx = 0; PeerIdx < Net->PeerCnt; PeerIdx++)
             {
-                Peer = &Net->Peers[PeerIdx];
+                Peer = SBN_LocatePeertIntfInNet(Net, PeerIdx);
+                if (Peer == NULL)
+                {
+                    continue;
+                }
 
                 // TODO: make configurable
                 for (MsgCnt = 0; MsgCnt < 100; MsgCnt++) /* read at most 100 messages from peer */
@@ -539,6 +557,22 @@ SBN_Status_t SBN_SendNetMsg(SBN_MsgType_t MsgType, SBN_MsgSz_t MsgSz, void *Msg,
     return SBN_Status;
 } /* end SBN_SendNetMsg */
 
+SBN_Status_t SBN_MatchSendPeerToTask(SBN_PeerRecord_t *PeerRec, void *Arg)
+{
+    SBN_SendTaskData_t *D = Arg;
+
+    if (CFE_RESOURCEID_TEST_EQUAL(PeerRec->Intf.SendTaskID, D->SendTaskID))
+    {
+        D->Peer   = &PeerRec->Intf;
+        D->PeerId = PeerRec->PeerId;
+        D->NetId  = PeerRec->NetId;
+
+        return SBN_FINISHED; /* just needs to be nonzero for iteration to stop */
+    }
+
+    return SBN_SUCCESS;
+}
+
 /**
  * \brief When a peer is connected, a task is created to listen to the relevant
  * pipe for messages to send to that peer.
@@ -558,26 +592,9 @@ void SBN_SendTask(void)
     memset(&D, 0, sizeof(D));
 
     CFE_ES_GetTaskID(&D.SendTaskID);
+    SBN_ForEachConfiguredPeer(SBN_MatchSendPeerToTask, &D);
 
-    for (D.NetIdx = 0; D.NetIdx < SBN_AppData.NetCnt; D.NetIdx++)
-    {
-        D.Net = &SBN_AppData.Nets[D.NetIdx];
-        for (D.PeerIdx = 0; D.PeerIdx < D.Net->PeerCnt; D.PeerIdx++)
-        {
-            D.Peer = &D.Net->Peers[D.PeerIdx];
-            if (CFE_RESOURCEID_TEST_EQUAL(D.Peer->SendTaskID, D.SendTaskID))
-            {
-                break;
-            } /* end if */
-        } /* end for */
-
-        if (D.PeerIdx < D.Net->PeerCnt)
-        {
-            break; /* found a ringer */
-        } /* end if */
-    } /* end for */
-
-    if (D.NetIdx == SBN_AppData.NetCnt)
+    if (D.Peer == NULL)
     {
         EVSSendErr(SBN_PEER_EID, "error connecting send task");
         return;
@@ -678,13 +695,21 @@ static SBN_Status_t SBN_CheckPeerPipes(void)
     {
         ReceivedFlag = 0;
 
-        for (NetIdx = 0; NetIdx < SBN_AppData.NetCnt; NetIdx++)
+        for (NetIdx = 0; NetIdx < SBN_PLATFORM_MAX_NETS; NetIdx++)
         {
-            Net = &SBN_AppData.Nets[NetIdx];
+            Net = SBN_LocateNetIntfByIndex(NetIdx);
+            if (Net == NULL || !Net->Configured)
+            {
+                continue;
+            }
 
             for (PeerIdx = 0; PeerIdx < Net->PeerCnt; PeerIdx++)
             {
-                Peer = &Net->Peers[PeerIdx];
+                Peer = SBN_LocatePeertIntfInNet(Net, PeerIdx);
+                if (Peer == NULL)
+                {
+                    continue;
+                }
 
                 // Poll peer here to detect disconnections and to reconnect
                 if (Net->IfOps->PollPeer(Peer) != SBN_SUCCESS)
@@ -804,9 +829,13 @@ static SBN_Status_t SBN_PeerPoll(void)
     SBN_PeerIdx_t        PeerIdx;
     SBN_PeerInterface_t *Peer;
 
-    for (NetIdx = 0; NetIdx < SBN_AppData.NetCnt; NetIdx++)
+    for (NetIdx = 0; NetIdx < SBN_PLATFORM_MAX_NETS; NetIdx++)
     {
-        Net = &SBN_AppData.Nets[NetIdx];
+        Net = SBN_LocateNetIntfByIndex(NetIdx);
+        if (Net == NULL || !Net->Configured)
+        {
+            continue;
+        }
 
         if (Net->IfOps->RecvFromNet && Net->TaskFlags & SBN_TASK_RECV)
         {
@@ -836,7 +865,11 @@ static SBN_Status_t SBN_PeerPoll(void)
         {
             for (PeerIdx = 0; PeerIdx < Net->PeerCnt; PeerIdx++)
             {
-                Peer = &Net->Peers[PeerIdx];
+                Peer = SBN_LocatePeertIntfInNet(Net, PeerIdx);
+                if (Peer == NULL)
+                {
+                    continue;
+                }
 
                 if (Net->IfOps->RecvFromPeer && Peer->TaskFlags & SBN_TASK_RECV)
                 {
@@ -884,12 +917,13 @@ static SBN_Status_t SBN_InitInterfaces(void)
     SBN_NetInterface_t  *Net;
     SBN_PeerIdx_t        PeerIdx;
     SBN_PeerInterface_t *Peer;
+    SBN_NetIdx_t         NetCnt;
 
-    for (NetIdx = 0; NetIdx < SBN_AppData.NetCnt; NetIdx++)
+    NetCnt = 0;
+    for (NetIdx = 0; NetIdx < SBN_PLATFORM_MAX_NETS; NetIdx++)
     {
-        Net = &SBN_AppData.Nets[NetIdx];
-
-        if (!Net->Configured)
+        Net = SBN_LocateNetIntfByIndex(NetIdx);
+        if (Net == NULL || !Net->Configured)
         {
             EVSSendErr(SBN_INIT_EID, "network #%u not configured (skipping)", (unsigned int)NetIdx);
         }
@@ -898,11 +932,16 @@ static SBN_Status_t SBN_InitInterfaces(void)
             EVSSendInfo(SBN_INIT_EID, "initializing net: %u", (unsigned int)NetIdx);
 
             Net->IfOps->InitNet(Net);
+            ++NetCnt;
 
             EVSSendInfo(SBN_INIT_EID, "Net %d has %d peers", NetIdx, Net->PeerCnt);
             for (PeerIdx = 0; PeerIdx < Net->PeerCnt; PeerIdx++)
             {
-                Peer = &Net->Peers[PeerIdx];
+                Peer = SBN_LocatePeertIntfInNet(Net, PeerIdx);
+                if (Peer == NULL)
+                {
+                    continue;
+                }
 
                 EVSSendInfo(SBN_PEER_EID,
                             "initializing net: %d peer: %d: sc: %d cpu: %d",
@@ -916,7 +955,7 @@ static SBN_Status_t SBN_InitInterfaces(void)
         }
     } /* end for */
 
-    EVSSendInfo(SBN_INIT_EID, "configured, %d nets", SBN_AppData.NetCnt);
+    EVSSendInfo(SBN_INIT_EID, "configured, %d nets", (int)NetCnt);
 
     return SBN_SUCCESS;
 } /* end SBN_InitInterfaces */
@@ -1232,9 +1271,12 @@ static void SBN_InitPeersFromConfig(const SBN_ConfTbl_t *ConfTbl)
     char                          FilterNameTemp[CFE_MISSION_MAX_API_LEN];
     SBN_PeerInterface_t          *Peer;
     SBN_NetInterface_t           *Net;
-    SBN_NetIdx_t                  MaxNet;
+    SBN_PeerRecord_t             *PeerRec;
+    SBN_NetRecord_t              *NetRec;
     SBN_PeerIdx_t                 PeerIdx;
     uint8                         FilterIdx;
+
+    SBN_NetId_t NetIds[SBN_PLATFORM_MAX_NETS];
 
     union
     {
@@ -1242,7 +1284,7 @@ static void SBN_InitPeersFromConfig(const SBN_ConfTbl_t *ConfTbl)
         char Address[SBN_MISSION_ADDR_SZ];
     } LocalBuf;
 
-    MaxNet = 0;
+    memset(NetIds, 0, sizeof(NetIds));
 
     /* load nets and peers */
     for (PeerIdx = 0; PeerIdx < SBN_MISSION_MAX_PEER_CNT && PeerIdx < ConfTbl->PeerCnt; PeerIdx++)
@@ -1271,7 +1313,19 @@ static void SBN_InitPeersFromConfig(const SBN_ConfTbl_t *ConfTbl)
         else
         {
             /* note: the "NetNum" in the table was validated already by the validation routine */
-            Net = &SBN_AppData.Nets[PeerConf->NetNum];
+            if (!CFE_RESOURCEID_TEST_DEFINED(NetIds[PeerConf->NetNum]))
+            {
+                SBN_RegisterNet(&NetIds[PeerConf->NetNum]);
+            }
+            NetRec = SBN_LocateNetRecordByID(NetIds[PeerConf->NetNum]);
+            if (!SBN_NetRecordIsMatch(NetRec, NetIds[PeerConf->NetNum]))
+            {
+                EVSSendCrit(SBN_TBL_EID, "no net record found (skipping peer %u)", (unsigned int)PeerIdx);
+                continue;
+            }
+
+            Net = &NetRec->Intf;
+
             CFE_SB_MessageStringGet(LocalBuf.Address,
                                     (const char *)PeerConf->Address,
                                     "",
@@ -1300,7 +1354,16 @@ static void SBN_InitPeersFromConfig(const SBN_ConfTbl_t *ConfTbl)
                             (unsigned int)PeerConf->NetNum);
 
                 /* Note that it was already validated that this cannot exceed the max peer count */
-                Peer = &Net->Peers[Net->PeerCnt];
+                SBN_RegisterPeer(&Net->PeerIds[Net->PeerCnt]);
+                PeerRec = SBN_LocatePeerRecordByID(Net->PeerIds[Net->PeerCnt]);
+                if (!SBN_PeerRecordIsMatch(PeerRec, Net->PeerIds[Net->PeerCnt]))
+                {
+                    EVSSendCrit(SBN_TBL_EID, "no peer record found (skipping peer %u)", (unsigned int)PeerIdx);
+                    continue;
+                }
+
+                PeerRec->NetId = NetRec->NetId;
+                Peer           = &PeerRec->Intf;
 
                 Peer->Net          = Net;
                 Peer->ProcessorID  = PeerConf->ProcessorID;
@@ -1344,20 +1407,15 @@ static void SBN_InitPeersFromConfig(const SBN_ConfTbl_t *ConfTbl)
             }
         }
     }
+}
 
-    /* Now find the MAX configured net number.  This is mainly for efficiency, to limit the looping at runtime. */
-    MaxNet = SBN_PLATFORM_MAX_NETS;
-    while (MaxNet != 0)
-    {
-        Net = &SBN_AppData.Nets[MaxNet - 1];
-        if (Net->Configured)
-        {
-            break;
-        }
-        --MaxNet;
-    }
+static SBN_Status_t SBN_DoNetCount(SBN_NetRecord_t *NetRec, void *Arg)
+{
+    SBN_NetIdx_t *Count = Arg;
 
-    SBN_AppData.NetCnt = MaxNet;
+    ++(*Count);
+
+    return SBN_SUCCESS;
 }
 
 static SBN_Status_t SBN_LoadConf(void)
@@ -1368,7 +1426,10 @@ static SBN_Status_t SBN_LoadConf(void)
     /* wipe the runtime info structs as we are re-loading them */
     memset(SBN_AppData.ProtocolModInfo, 0, sizeof(SBN_AppData.ProtocolModInfo));
     memset(SBN_AppData.FilterModInfo, 0, sizeof(SBN_AppData.FilterModInfo));
-    memset(SBN_AppData.Nets, 0, sizeof(SBN_AppData.Nets));
+    memset(SBN_AppData.PeerRecords, 0, sizeof(SBN_AppData.PeerRecords));
+    memset(SBN_AppData.NetRecords, 0, sizeof(SBN_AppData.NetRecords));
+
+    SBN_AppData.ActiveNetCount = 0;
 
     TableAddr = NULL;
     Status    = CFE_TBL_GetAddress(&TableAddr, SBN_AppData.ConfTblHandle);
@@ -1389,6 +1450,8 @@ static SBN_Status_t SBN_LoadConf(void)
         EVSSendCrit(SBN_TBL_EID, "unable to release address of conf tbl");
         return SBN_ERROR;
     } /* end if */
+
+    SBN_ForEachConfiguredNet(SBN_DoNetCount, &SBN_AppData.ActiveNetCount);
 
     /* ...but we keep the handle so we can be notified of updates */
     return SBN_SUCCESS;
@@ -1454,62 +1517,86 @@ static SBN_Status_t SBN_UnloadPeer(SBN_PeerInterface_t *Peer)
     return SBN_SUCCESS;
 }
 
+static SBN_Status_t SBN_DoUnloadNet(SBN_NetRecord_t *NetRec, void *Arg)
+{
+    uint32             *Errs = Arg;
+    SBN_NetInterface_t *Net;
+    SBN_Status_t        Status;
+    SBN_PeerIdx_t       PeerIdx;
+    SBN_PeerRecord_t   *PeerRec;
+
+    Net = &NetRec->Intf;
+
+    Net->Configured = false;
+
+    if (CFE_RESOURCEID_TEST_DEFINED(Net->RecvTaskID))
+    {
+        if (CFE_ES_DeleteChildTask(Net->RecvTaskID) != CFE_SUCCESS)
+        {
+            EVSSendCrit(SBN_TBL_EID, "unable to delete receive task %d", SBN_NetId_AsInt(NetRec->NetId));
+            ++(*Errs);
+        }
+
+        Net->RecvTaskID = CFE_ES_TASKID_UNDEFINED;
+    }
+
+    for (PeerIdx = 0; PeerIdx < Net->PeerCnt; PeerIdx++)
+    {
+        PeerRec = SBN_LocatePeerRecordByID(Net->PeerIds[PeerIdx]);
+
+        if (SBN_PeerRecordIsMatch(PeerRec, Net->PeerIds[PeerIdx]))
+        {
+            SBN_UnloadPeer(&PeerRec->Intf);
+
+            if (Net->IfOps && Net->IfOps->UnloadPeer)
+            {
+                Status = Net->IfOps->UnloadPeer(&PeerRec->Intf);
+                if (Status != SBN_SUCCESS)
+                {
+                    EVSSendCrit(SBN_TBL_EID, "unable to unload peer %d", SBN_PeerId_AsInt(PeerRec->PeerId));
+                    ++(*Errs);
+                }
+            }
+
+            SBN_PeerRecordSetFree(PeerRec);
+        }
+
+        Net->PeerIds[PeerIdx] = SBN_PEERID_UNDEFINED;
+    }
+
+    // Peers were cleared, reset the count
+    Net->PeerCnt = 0;
+
+    if (Net->IfOps && Net->IfOps->UnloadNet)
+    {
+        Status = Net->IfOps->UnloadNet(Net);
+    }
+    else
+    {
+        Status = SBN_SUCCESS;
+    }
+    if (Status != SBN_SUCCESS)
+    {
+        EVSSendCrit(SBN_TBL_EID, "unable to unload network %d", SBN_NetId_AsInt(NetRec->NetId));
+        ++(*Errs);
+    }
+    else
+    {
+        EVSSendInfo(SBN_TBL_EID, "Terminated net: %d", SBN_NetId_AsInt(NetRec->NetId));
+    }
+
+    SBN_NetRecordSetFree(NetRec);
+
+    return SBN_SUCCESS;
+}
+
 static SBN_Status_t SBN_UnloadNets(void)
 {
-    uint32               Errs;
-    SBN_Status_t         Status;
-    int                  NetIdx;
-    SBN_NetInterface_t  *Net;
-    SBN_PeerIdx_t        PeerIdx;
-    SBN_PeerInterface_t *Peer;
+    uint32 Errs;
 
     Errs = 0;
 
-    for (NetIdx = 0; NetIdx < SBN_AppData.NetCnt; NetIdx++)
-    {
-        Net = &SBN_AppData.Nets[NetIdx];
-        if (!Net->Configured)
-        {
-            /* if it was not configured in the first place, do not try to unconfigure it */
-            continue;
-        }
-
-        Net->Configured = false;
-
-        if (CFE_RESOURCEID_TEST_DEFINED(Net->RecvTaskID))
-        {
-            if (CFE_ES_DeleteChildTask(Net->RecvTaskID) != CFE_SUCCESS)
-            {
-                EVSSendCrit(SBN_TBL_EID, "unable to delete receive task %d", NetIdx);
-                ++Errs;
-            }
-
-            Net->RecvTaskID = CFE_ES_TASKID_UNDEFINED;
-        }
-
-        // UnloadNet assumes Peers are still valid
-        Status = Net->IfOps->UnloadNet(Net);
-        if (Status != SBN_SUCCESS)
-        {
-            EVSSendCrit(SBN_TBL_EID, "unable to unload network %d", NetIdx);
-            ++Errs;
-        }
-        else
-        {
-            EVSSendInfo(SBN_TBL_EID, "Terminated net: %d", NetIdx);
-        }
-
-        for (PeerIdx = 0; PeerIdx < Net->PeerCnt; PeerIdx++)
-        {
-            Peer = &Net->Peers[PeerIdx];
-            SBN_UnloadPeer(Peer);
-        }
-
-        // Peers were cleared, reset the count
-        Net->PeerCnt = 0;
-    } /* end for */
-
-    SBN_AppData.NetCnt = 0;
+    SBN_ForEachConfiguredNet(SBN_DoUnloadNet, &Errs);
 
     if (Errs != 0)
     {
@@ -1634,12 +1721,21 @@ void SBN_InitializeCounters(void)
     SBN_AppData.CmdCnt    = 0;
     SBN_AppData.CmdErrCnt = 0;
 
-    for (NetIdx = 0; NetIdx < SBN_AppData.NetCnt; NetIdx++)
+    for (NetIdx = 0; NetIdx < SBN_PLATFORM_MAX_NETS; NetIdx++)
     {
-        Net = &SBN_AppData.Nets[NetIdx];
+        Net = SBN_LocateNetIntfByIndex(NetIdx);
+        if (Net == NULL || !Net->Configured)
+        {
+            continue;
+        }
+
         for (PeerIdx = 0; PeerIdx < Net->PeerCnt; PeerIdx++)
         {
-            Peer = &Net->Peers[PeerIdx];
+            Peer = SBN_LocatePeertIntfInNet(Net, PeerIdx);
+            if (Peer == NULL)
+            {
+                continue;
+            }
             SBN_InitializePeerCounters(Peer);
         }
     }
@@ -1960,15 +2056,21 @@ SBN_Status_t SBN_ProcessNetMsg(SBN_NetInterface_t *Net,
 SBN_PeerInterface_t *
 SBN_GetPeer(SBN_NetInterface_t *Net, SBN_ProcessorID_t ProcessorID, SBN_SpacecraftID_t SpacecraftID)
 {
-    SBN_PeerIdx_t PeerIdx;
+    SBN_PeerIdx_t     PeerIdx;
+    SBN_PeerId_t      PeerId;
+    SBN_PeerRecord_t *PeerRec;
 
     for (PeerIdx = 0; PeerIdx < Net->PeerCnt; PeerIdx++)
     {
-        if (Net->Peers[PeerIdx].ProcessorID == ProcessorID && Net->Peers[PeerIdx].SpacecraftID == SpacecraftID)
+        PeerId  = Net->PeerIds[PeerIdx];
+        PeerRec = SBN_LocatePeerRecordByID(PeerId);
+
+        if (SBN_PeerRecordIsMatch(PeerRec, PeerId) && PeerRec->Intf.ProcessorID == ProcessorID
+            && PeerRec->Intf.SpacecraftID == SpacecraftID)
         {
-            return &Net->Peers[PeerIdx];
-        } /* end if */
-    } /* end for */
+            return &PeerRec->Intf;
+        }
+    }
 
     return NULL;
 } /* end SBN_GetPeer */
