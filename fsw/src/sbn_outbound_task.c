@@ -23,8 +23,10 @@
 
 #include "sbn_error.h"
 #include "sbn_app.h"
-//jphfix #include "cfe_es.h" /* PerfLog */
-//jphfix #include "cfe_platform_cfg.h"
+#include "sbn_worker_task.h"
+#include "sbn_outbound_task.h"
+#include "sbn_filter.h"
+#include "sbn_connection.h"
 
 /**
  * Sends a message to a peer using the module's send API.
@@ -36,14 +38,14 @@
  * @return Number of characters sent on success, -1 on error.
  *
  */
-SBN_Status_t SBN_SendNetMsg(SBN_MsgType_t MsgType, SBN_MsgSz_t MsgSz, void *Msg, SBN_PeerInterface_t *Peer)
+SBN_Status_t SBN_Outbound_SendToPeer(SBN_PeerInterface_t *Peer, SBN_BufferDesc_t *D)
 {
     SBN_NetInterface_t *Net;
     SBN_Status_t        SBN_Status;
 
     Net = Peer->Net;
 
-    SBN_Status = Net->IfOps->Send(Peer, MsgType, MsgSz, Msg);
+    SBN_Status = Net->IfOps->Send(Peer, D->MsgType, D->ActualDataSz, D->DataPtr);
 
     if (SBN_Status != SBN_SUCCESS)
     {
@@ -52,394 +54,119 @@ SBN_Status_t SBN_SendNetMsg(SBN_MsgType_t MsgType, SBN_MsgSz_t MsgSz, void *Msg,
     else
     {
         Peer->Counts.SendCnt++;
-    } /* end if */
+    }
 
     /* for clients that need a poll or heartbeat, update time even when failing */
     OS_GetLocalTime(&Peer->LastSend);
 
+    /* Reset the buffer because this message was sent */
+    D->MsgType = SBN_NO_MSG;
+    D->ActualDataSz = 0;
+
     return SBN_Status;
 } /* end SBN_SendNetMsg */
 
-
-/**
- * \brief When a peer is connected, a task is created to listen to the relevant
- * pipe for messages to send to that peer.
- */
-void SBN_SendJob(SBN_SendTaskData_t *D)
+static void SBN_Outbound_AddDataSchedule(SBN_PeerRecord_t *PeerRec)
 {
-    SBN_Filter_Ctx_t   Filter_Context;
-    CFE_MSG_Size_t     MsgSz;
-    SBN_MsgSz_t        SBN_MsgSz;
-    SBN_ModuleIdx_t    FilterIdx;
+    SBN_WorkerTask_WorkItem_t WorkItem;
+
+    memset(&WorkItem, 0, sizeof(WorkItem));
+
+    WorkItem.JobType = SBN_WorkerTask_JobType_PEER_OUTBOUND;
+    WorkItem.Info.Comms.PeerId = SBN_PeerRecordGetID(PeerRec);
+    WorkItem.Info.Comms.NetId = PeerRec->NetId;
+
+    PeerRec->State.OutboundDataIsScheduled = SBN_WorkerTask_ScheduleJob(&WorkItem);
+}
+
+void SBN_OutboundPeerDataJob(SBN_PeerRecord_t *PeerRec, SBN_BufferDesc_t *D)
+{
+    const CFE_SB_Buffer_t *BufPtr;
     int32 TimeOut;
+    int32 MsgLim;
+    CFE_MSG_Size_t MsgSz;
+    CFE_SB_MsgId_t MsgId;
+    CFE_Status_t CFE_Status;
+    SBN_Status_t SBN_Status;
+    bool IsOK;
 
-    MsgSz                         = 0;
-    Filter_Context.MyProcessorID  = CFE_PSP_GetProcessorId();
-    Filter_Context.MySpacecraftID = CFE_PSP_GetSpacecraftId();
+    IsOK = SBN_Connection_IsPeerReady(PeerRec);
+    BufPtr = NULL;
+    MsgLim = 100; /* jphfix - make platform config */
 
-    if (!D->Peer->Connected)
+    if (PeerRec->State.InboundAutoReschedule)
     {
-        return;
-    }
-
-    /* JPHFIX: In polling mode this should be 0 (CHECK) */
-    TimeOut = 100;
-
-    if (CFE_SB_ReceiveBuffer((CFE_SB_Buffer_t **)&D->MsgPtr, D->Peer->Pipe, TimeOut) != CFE_SUCCESS)
-    {
-        return;
-    } /* end if */
-
-    Filter_Context.PeerProcessorID  = D->Peer->ProcessorID;
-    Filter_Context.PeerSpacecraftID = D->Peer->SpacecraftID;
-
-    for (FilterIdx = 0; FilterIdx < D->Peer->FilterCnt; FilterIdx++)
-    {
-        if (D->Peer->Filters[FilterIdx]->FilterSend == NULL)
-        {
-            continue;
-        } /* end if */
-
-        D->Status = (D->Peer->Filters[FilterIdx]->FilterSend)(D->MsgPtr, &Filter_Context);
-        if (D->Status == SBN_IF_EMPTY) /* filter requests not sending this msg, see below for loop */
-        {
-            break;
-        } /* end if */
-
-        if (D->Status != SBN_SUCCESS)
-        {
-            break;
-        } /* end if */
-    } /* end for */
-
-    if (FilterIdx < D->Peer->FilterCnt)
-    {
-        /* one of the above filters suggested rejecting this message */
-        /* JPHFIX: this will hold the buffer. needs to loop */
-        return;
-    } /* end if */
-
-    if (CFE_MSG_GetSize(D->MsgPtr, &MsgSz) != CFE_SUCCESS)
-    {
-        /* JPHFIX: this will hold the buffer. needs to loop */
-        return;
-    } /* end if */
-
-    SBN_MsgSz = (SBN_MsgSz_t)MsgSz;
-
-    D->Status = SBN_SendNetMsg(SBN_APP_MSG, SBN_MsgSz, D->MsgPtr, D->Peer);
-
-} /* end SBN_SendTask() */
-
-
-
-#ifdef jphfix
-/**
- * Sends a message to a peer using the module's send API.
- *
- * @param MsgType SBN type of the message
- * @param MsgSz Size of the message
- * @param Msg Message to send
- * @param Peer The peer to send the message to.
- * @return Number of characters sent on success, -1 on error.
- *
- */
-SBN_Status_t SBN_SendNetMsg(SBN_MsgType_t MsgType, SBN_MsgSz_t MsgSz, void *Msg, SBN_PeerInterface_t *Peer)
-{
-    SBN_NetInterface_t *Net;
-    SBN_Status_t        SBN_Status;
-
-    Net = Peer->Net;
-
-    if (CFE_RESOURCEID_TEST_DEFINED(Peer->SendTaskID))
-    {
-        if (OS_MutSemTake(SBN_AppData.SendMutex) != OS_SUCCESS)
-        {
-            EVSSendErr(SBN_PEER_EID, "unable to take send mutex");
-            return SBN_ERROR;
-        } /* end if */
-    } /* end if */
-
-    SBN_Status = Net->IfOps->Send(Peer, MsgType, MsgSz, Msg);
-
-    if (SBN_Status != SBN_SUCCESS)
-    {
-        Peer->Counts.SendErrCnt++;
+        /* Emulate a dedicated task by pending on the pipe, but not forever */
+        TimeOut = 100;
     }
     else
     {
-        Peer->Counts.SendCnt++;
-    } /* end if */
+        /* A normal Poll */
+        TimeOut = CFE_SB_POLL;
+    }
 
-    /* for clients that need a poll or heartbeat, update time even when failing */
-    OS_GetLocalTime(&Peer->LastSend);
-
-    if (CFE_RESOURCEID_TEST_DEFINED(Peer->SendTaskID))
+    while(MsgLim > 0 && IsOK)
     {
-        if (OS_MutSemGive(SBN_AppData.SendMutex) != OS_SUCCESS)
+        --MsgLim;
+
+        CFE_Status = CFE_SB_ReceiveBuffer((CFE_SB_Buffer_t **)&BufPtr, PeerRec->Intf.Pipe, TimeOut);
+        if (CFE_Status != CFE_SUCCESS)
         {
-            EVSSendErr(SBN_PEER_EID, "unable to give send mutex");
-            return SBN_ERROR;
-        } /* end if */
-    } /* end if */
+            /* These two status codes are acceptable, anything else is a problem */
+            IsOK = (CFE_Status == CFE_SB_TIME_OUT || CFE_Status == CFE_SB_NO_MESSAGE);
+            break;
+        }
 
-    return SBN_Status;
-} /* end SBN_SendNetMsg */
-#endif
+        if (CFE_MSG_GetSize(&BufPtr->Msg, &MsgSz) != CFE_SUCCESS)
+        {
+            /* this is not supposed to happen */
+            IsOK = false;
+        }
+        else if (MsgSz <= D->MaxDataSz)
+        {
+            /* We must make a copy of the message before modifying it.
+             * JPHFIX: this is highly inefficient - replace with a useful copy */
+            memcpy(D->DataPtr, &BufPtr->Msg, MsgSz);
+            D->ActualDataSz = MsgSz;
+            D->MsgType = SBN_APP_MSG;
 
-#ifdef jphfix
-/**
- * \brief When a peer is connected, a task is created to listen to the relevant
- * pipe for messages to send to that peer.
- */
-void SBN_SendTask(void)
+            SBN_Status = SBN_Filter_ProcessModifiers(PeerRec, D);
+            if (SBN_Status == SBN_SUCCESS)
+            {
+                CFE_MSG_GetMsgId(&BufPtr->Msg, &MsgId);
+                OS_printf("%s(): FORWARDING --> 0x%04x %u\n",__func__, CFE_SB_MsgIdToValue(MsgId), (unsigned int)MsgSz);
+                SBN_Status = SBN_Outbound_SendToPeer(&PeerRec->Intf, D);
+
+                /* The connection might have been broken, stop trying to send if this fails */
+                IsOK =  (SBN_Status == SBN_SUCCESS);
+            }
+        }
+    }
+
+    if (PeerRec->State.OutboundAutoReschedule && IsOK)
+    {
+        /* In task mode, immediately reschedule this same job */
+        SBN_Outbound_AddDataSchedule(PeerRec);
+    }
+    else
+    {
+        /* it will be scheduled again at the next cycle */
+        PeerRec->State.OutboundDataIsScheduled = false;
+    }
+}
+
+static SBN_Status_t SBN_DoOutboundPollCycle(SBN_PeerRecord_t *PeerRec, void *Arg)
 {
-    SBN_SendTaskData_t D;
-    SBN_Filter_Ctx_t   Filter_Context;
-    CFE_MSG_Size_t     MsgSz;
-    SBN_MsgSz_t        SBN_MsgSz;
-    SBN_ModuleIdx_t    FilterIdx;
-
-    MsgSz                         = 0;
-    Filter_Context.MyProcessorID  = CFE_PSP_GetProcessorId();
-    Filter_Context.MySpacecraftID = CFE_PSP_GetSpacecraftId();
-
-    memset(&D, 0, sizeof(D));
-
-    CFE_ES_GetTaskID(&D.SendTaskID);
-
-    for (D.NetIdx = 0; D.NetIdx < SBN_AppData.NetCnt; D.NetIdx++)
+    /* The actual work is done by helper threads, just schedule it. */
+    if (SBN_Connection_IsPeerReady(PeerRec) && !PeerRec->State.OutboundDataIsScheduled)
     {
-        D.Net = &SBN_AppData.Nets[D.NetIdx];
-        for (D.PeerIdx = 0; D.PeerIdx < D.Net->PeerCnt; D.PeerIdx++)
-        {
-            D.Peer = &D.Net->Peers[D.PeerIdx];
-            if (CFE_RESOURCEID_TEST_EQUAL(D.Peer->SendTaskID, D.SendTaskID))
-            {
-                break;
-            } /* end if */
-        } /* end for */
+        SBN_Outbound_AddDataSchedule(PeerRec);
+    }
 
-        if (D.PeerIdx < D.Net->PeerCnt)
-        {
-            break; /* found a ringer */
-        } /* end if */
-    } /* end for */
-
-    if (D.NetIdx == SBN_AppData.NetCnt)
-    {
-        EVSSendErr(SBN_PEER_EID, "error connecting send task");
-        return;
-    } /* end if */
-
-    while (1)
-    {
-        if (!D.Peer->Connected)
-        {
-            OS_TaskDelay(SBN_PLATFORM_MAIN_LOOP_DELAY);
-            continue;
-        } /* end if */
-
-        if (CFE_SB_ReceiveBuffer((CFE_SB_Buffer_t **)&D.MsgPtr, D.Peer->Pipe, CFE_SB_PEND_FOREVER) != CFE_SUCCESS)
-        {
-            break;
-        } /* end if */
-
-        Filter_Context.PeerProcessorID  = D.Peer->ProcessorID;
-        Filter_Context.PeerSpacecraftID = D.Peer->SpacecraftID;
-
-        for (FilterIdx = 0; FilterIdx < D.Peer->FilterCnt; FilterIdx++)
-        {
-            if (D.Peer->Filters[FilterIdx]->FilterSend == NULL)
-            {
-                continue;
-            } /* end if */
-
-            D.Status = (D.Peer->Filters[FilterIdx]->FilterSend)(D.MsgPtr, &Filter_Context);
-            if (D.Status == SBN_IF_EMPTY) /* filter requests not sending this msg, see below for loop */
-            {
-                break;
-            } /* end if */
-
-            if (D.Status != SBN_SUCCESS)
-            {
-                break;
-            } /* end if */
-        } /* end for */
-
-        if (FilterIdx < D.Peer->FilterCnt)
-        {
-            /* one of the above filters suggested rejecting this message */
-            continue;
-        } /* end if */
-
-        if (CFE_MSG_GetSize(D.MsgPtr, &MsgSz) != CFE_SUCCESS)
-        {
-            continue;
-        } /* end if */
-
-        SBN_MsgSz = (SBN_MsgSz_t)MsgSz;
-
-        D.Status = SBN_SendNetMsg(SBN_APP_MSG, SBN_MsgSz, D.MsgPtr, D.Peer);
-
-        if (D.Status == SBN_ERROR)
-        {
-            break;
-        } /* end if */
-    } /* end while */
-
-    /* mark peer as not having a task so that sending will create a new one */
-    D.Peer->SendTaskID = CFE_ES_TASKID_UNDEFINED;
-} /* end SBN_SendTask() */
-#endif
-
-#ifdef jphfix
-/**
- * Iterate through all peers, examining the pipe to see if there are messages
- * I need to send to that peer.
- */
-static SBN_Status_t SBN_CheckPeerPipes(void)
-{
-    SBN_Status_t         SBN_Status;
-    CFE_Status_t         CFE_Status;
-    int                  ReceivedFlag;
-    int                  iter;
-    CFE_MSG_Message_t   *MsgPtr;
-    CFE_MSG_Size_t       MsgSz;
-    SBN_MsgSz_t          SBN_MsgSz;
-    SBN_Filter_Ctx_t     Filter_Context;
-    SBN_NetIdx_t         NetIdx;
-    SBN_NetInterface_t  *Net;
-    SBN_PeerIdx_t        PeerIdx;
-    SBN_ModuleIdx_t      FilterIdx;
-    SBN_PeerInterface_t *Peer;
-    char                 SendTaskName[32];
-
-    MsgPtr                        = NULL;
-    MsgSz                         = 0;
-    Filter_Context.MyProcessorID  = CFE_PSP_GetProcessorId();
-    Filter_Context.MySpacecraftID = CFE_PSP_GetSpacecraftId();
-
-    /**
-     * \note This processes one message per peer, then start again until no
-     * peers have pending messages. At max only process SBN_PLATFORM_MAX_MSG_PER_WAKEUP
-     * per peer per wakeup otherwise I will starve other processing.
-     */
-    for (iter = 0; iter < SBN_PLATFORM_MAX_MSG_PER_WAKEUP; iter++)
-    {
-        ReceivedFlag = 0;
-
-        for (NetIdx = 0; NetIdx < SBN_AppData.NetCnt; NetIdx++)
-        {
-            Net = &SBN_AppData.Nets[NetIdx];
-
-            for (PeerIdx = 0; PeerIdx < Net->PeerCnt; PeerIdx++)
-            {
-                Peer = &Net->Peers[PeerIdx];
-
-                // Poll peer here to detect disconnections and to reconnect
-                if (Net->IfOps->PollPeer(Peer) != SBN_SUCCESS)
-                {
-                    EVSSendErr(SBN_PEERTASK_EID, "failed to poll peer %d:%d", Peer->SpacecraftID, Peer->ProcessorID);
-                }
-
-                if (Peer->Connected == 0)
-                {
-                    EVSSendDbg(SBN_PEERTASK_EID, "not connected to peer %d:%d", Peer->SpacecraftID, Peer->ProcessorID);
-                    continue;
-                } /* end if */
-
-                EVSSendDbg(SBN_PEERTASK_EID, "SBN connected to peer %d:%d", Peer->SpacecraftID, Peer->ProcessorID);
-
-                if (Peer->TaskFlags & SBN_TASK_SEND)
-                {
-                    if (!CFE_RESOURCEID_TEST_DEFINED(Peer->SendTaskID))
-                    {
-                        /* TODO: logic/controls to prevent hammering? */
-                        snprintf(SendTaskName,
-                                 32,
-                                 "sendT_%d_%d_%d",
-                                 (int)NetIdx,
-                                 (int)(Peer->ProcessorID),
-                                 (int)(Peer->SpacecraftID));
-
-                        CFE_Status =
-                            CFE_ES_CreateChildTask(&(Peer->SendTaskID),
-                                                   SendTaskName,
-                                                   (CFE_ES_ChildTaskMainFuncPtr_t)&SBN_SendTask,
-                                                   NULL,
-                                                   CFE_PLATFORM_ES_DEFAULT_STACK_SIZE + 2 * sizeof(SBN_SendTaskData_t),
-                                                   0,
-                                                   0);
-
-                        if (CFE_Status != CFE_SUCCESS)
-                        {
-                            EVSSendErr(SBN_PEER_EID,
-                                       "error creating send task for peer %d:%d",
-                                       Peer->SpacecraftID,
-                                       Peer->ProcessorID);
-
-                            return SBN_ERROR;
-                        } /* end if */
-                    } /* end if */
-
-                    continue;
-                } /* end if */
-
-                /* if peer data is not in use, go to next peer */
-                if (CFE_SB_ReceiveBuffer((CFE_SB_Buffer_t **)&MsgPtr, Peer->Pipe, CFE_SB_POLL) != CFE_SUCCESS)
-                {
-                    continue;
-                } /* end if */
-
-                ReceivedFlag = 1;
-
-                Filter_Context.PeerProcessorID  = Peer->ProcessorID;
-                Filter_Context.PeerSpacecraftID = Peer->SpacecraftID;
-
-                for (FilterIdx = 0; FilterIdx < Peer->FilterCnt; FilterIdx++)
-                {
-                    if (Peer->Filters[FilterIdx]->FilterSend == NULL)
-                    {
-                        continue;
-                    } /* end if */
-
-                    SBN_Status = (Peer->Filters[FilterIdx]->FilterSend)(MsgPtr, &Filter_Context);
-
-                    if (SBN_Status == SBN_IF_EMPTY) /* filter requests not sending this msg, see below for loop */
-                    {
-                        break;
-                    } /* end if */
-
-                    if (SBN_Status != SBN_SUCCESS)
-                    {
-                        /* something fatal happened, exit */
-                        return SBN_Status;
-                    } /* end if */
-                } /* end for */
-
-                if (FilterIdx < Peer->FilterCnt)
-                {
-                    /* one of the above filters suggested rejecting this message */
-                    continue;
-                } /* end if */
-
-                if (CFE_MSG_GetSize(MsgPtr, &MsgSz) != CFE_SUCCESS)
-                {
-                    continue;
-                } /* end if */
-
-                SBN_MsgSz = (SBN_MsgSz_t)MsgSz;
-
-                SBN_SendNetMsg(SBN_APP_MSG, SBN_MsgSz, MsgPtr, Peer);
-            } /* end for */
-        } /* end for */
-
-        if (!ReceivedFlag)
-        {
-            break;
-        } /* end if */
-    } /* end for */
     return SBN_SUCCESS;
-} /* end SBN_CheckPeerPipes */
-#endif
+}
+
+void SBN_OutboundPollCycle(void)
+{
+    SBN_ForEachConfiguredPeer(SBN_DoOutboundPollCycle, NULL);
+}

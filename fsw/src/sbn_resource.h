@@ -20,6 +20,7 @@
 #define SBN_RESOURCE_H
 
 #include "sbn_interfaces.h"
+#include "sbn_subs.h"
 
 /* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 /*                                                                 */
@@ -27,18 +28,50 @@
 /*                                                                 */
 /* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 
-typedef struct SBN_NetRecord
+/* State info about a net that is kept locally in SBN, not shared with modules */
+/* This is instantiated as "volatile" because the flags can be accessed between tasks */
+typedef struct SBN_PollState
+{
+    bool InboundSchedulingEnabled; /* If true, then inbound activity needs scheduling */
+    bool InboundAutoReschedule;  /* if true, self-reschedules inbound activity.  This mimics an inbound task. */
+    bool OutboundAutoReschedule;  /* if true, self-reschedules outbound activity.  This mimics an outbound task. */
+
+    bool InboundDataIsScheduled; /* If true, then inbound activity is scheduled on the job queue */
+    bool OutboundDataIsScheduled; /* If true, then outbound activity is scheduled on the job queue */
+
+} SBN_PollState_t;
+
+typedef struct SBN_PeerState
+{
+    uint8 ConnectionCheckCounter; /* Countdown timer for periodic checking of the connection health */
+
+    SBN_SubCnt_t LocalPipeSubCnt; /* A running total of successful SB subscriptions on the local pipe */
+
+    uint32 PeerSentSubVersion;
+    uint32 LocalPipeSubVersion;
+    SBN_SubChangeQ_t Q;
+
+} SBN_PeerState_t;
+
+struct SBN_NetRecord
 {
     SBN_NetId_t        NetId;
-    SBN_NetInterface_t Intf;
-} SBN_NetRecord_t;
 
-typedef struct SBN_PeerRecord
+    volatile SBN_PollState_t    State;
+
+    SBN_NetInterface_t Intf;
+};
+
+struct SBN_PeerRecord
 {
     SBN_PeerId_t        PeerId;
     SBN_NetId_t         NetId;
+
+    volatile SBN_PollState_t     State;
+    SBN_PeerState_t PeerState;
+
     SBN_PeerInterface_t Intf;
-} SBN_PeerRecord_t;
+};
 
 /**
  * @brief Function to use with SBN_ForEachConfiguredPeer()

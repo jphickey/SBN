@@ -23,10 +23,20 @@
 
 #include "sbn_error.h"
 #include "sbn_worker_task.h"
-#include "cfe_mission_cfg.h"
-#include "osapi.h"
+#include "sbn_resource.h"
+#include "sbn_inbound_task.h"
+#include "sbn_outbound_task.h"
+#include "sbn_connection.h"
+
+//#include "cfe_mission_cfg.h"
+//#include "osapi.h"
 
 #define SBN_WORKER_QUEUE_MASK (SBN_WORKER_QUEUE_DEPTH - 1)
+
+typedef void (*SBN_PeerJobFunc_t)(SBN_PeerRecord_t *PeerRec, SBN_BufferDesc_t *BufferD);
+typedef void (*SBN_NetJobFunc_t)(SBN_NetRecord_t *NetRec, SBN_BufferDesc_t *BufferD);
+
+
 
 static SBN_WorkerTask_WorkQueue_t SBN_WorkQueue;
 
@@ -84,6 +94,56 @@ void SBN_WorkerTask_GetAssignment(SBN_WorkerTask_WorkItem_t *Assignment)
     OS_CondVarUnlock(SBN_WorkQueue.Sync);
 }
 
+void SBN_WorkerTask_DispatchToNet(SBN_WorkerTask_Context_t *Ctxt, SBN_NetId_t NetId, SBN_NetJobFunc_t HandlerFunc)
+{
+    SBN_NetRecord_t *NetRec;
+
+    NetRec = SBN_LocateNetRecordByID(NetId);
+    if (SBN_NetRecordIsMatch(NetRec, NetId))
+    {
+        HandlerFunc(NetRec, &Ctxt->BufferDesc);
+    }
+}
+
+void SBN_WorkerTask_DispatchToPeer(SBN_WorkerTask_Context_t *Ctxt,  SBN_PeerId_t PeerId, SBN_PeerJobFunc_t HandlerFunc)
+{
+    SBN_PeerRecord_t *PeerRec;
+
+    PeerRec = SBN_LocatePeerRecordByID(PeerId);
+    if (SBN_PeerRecordIsMatch(PeerRec, PeerId))
+    {
+        HandlerFunc(PeerRec, &Ctxt->BufferDesc);
+    }
+}
+
+void SBN_WorkerTask_DispatchAssignment(SBN_WorkerTask_Context_t *Ctxt)
+{
+    memset(&Ctxt->BufferDesc, 0, sizeof(Ctxt->BufferDesc));
+
+    Ctxt->BufferDesc.DataPtr = &Ctxt->u;
+    Ctxt->BufferDesc.MaxDataSz = sizeof(Ctxt->u);
+
+    switch(Ctxt->Assignment.JobType)
+    {
+        case SBN_WorkerTask_JobType_CHECK_CONNECTION:
+            SBN_WorkerTask_DispatchToPeer(Ctxt, Ctxt->Assignment.Info.Comms.PeerId, SBN_CheckPeerConnectionJob);
+            break;
+        case SBN_WorkerTask_JobType_PEER_OUTBOUND:
+            SBN_WorkerTask_DispatchToPeer(Ctxt, Ctxt->Assignment.Info.Comms.PeerId, SBN_OutboundPeerDataJob);
+            break;
+        case SBN_WorkerTask_JobType_PEER_INBOUND:
+            SBN_WorkerTask_DispatchToPeer(Ctxt, Ctxt->Assignment.Info.Comms.PeerId, SBN_InboundPeerDataJob);
+            break;
+        case SBN_WorkerTask_JobType_NET_INBOUND:
+            SBN_WorkerTask_DispatchToNet(Ctxt, Ctxt->Assignment.Info.Comms.NetId, SBN_InboundNetDataJob);
+            break;
+        default:
+            break;
+    }
+
+    ++Ctxt->NumCompleted;
+}
+
 void SBN_WorkerTask_EntryPoint(void)
 {
     SBN_WorkerTask_Context_t *Ctxt;
@@ -110,10 +170,9 @@ void SBN_WorkerTask_EntryPoint(void)
             break;
         }
 
-        if (SBN_WorkQueue.ShouldRun && Ctxt->Assignment.JobType != SBN_WorkerTask_JobType_NONE)
+        if (SBN_WorkQueue.ShouldRun)
         {
-            /* JPHFIX: Do the assignment */
-            ++Ctxt->NumCompleted;
+            SBN_WorkerTask_DispatchAssignment(Ctxt);
         }
     }
 
@@ -134,8 +193,11 @@ SBN_Status_t SBN_WorkerTask_Setup(void)
     /* We can use a condition variable to sync the threads */
     OS_CondVarCreate(&SBN_WorkQueue.Sync, "SBN_Worker", 0);
 
-    for (i=0; i < SBN_NUM_WORKER_TASKS; ++i)
+    i=0;
+    while(i < SBN_NUM_WORKER_TASKS)
     {
+        ++i;
+
         snprintf(TaskName, sizeof(TaskName), "SBN_WORK_%02u", (unsigned int)i);
         Status = CFE_ES_CreateChildTask(&SBN_WorkQueue.Tasks[i].TaskId, TaskName, SBN_WorkerTask_EntryPoint, NULL, SBN_WORKER_TASK_STACK_SIZE, SBN_WORKER_TASK_PRIORITY, 0);
         if (Status != CFE_SUCCESS)

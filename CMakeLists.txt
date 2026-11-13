@@ -33,10 +33,12 @@ set(APP_SRC_FILES
   fsw/src/sbn_subs.c
   fsw/src/sbn_pack.c
   fsw/src/sbn_module.c
+  fsw/src/sbn_filter.c
+  fsw/src/sbn_resource.c
   fsw/src/sbn_inbound_task.c
   fsw/src/sbn_outbound_task.c
   fsw/src/sbn_worker_task.c
-  fsw/src/sbn_resource.c
+  fsw/src/sbn_connection.c
 )
 
 if (CFE_EDS_ENABLED)

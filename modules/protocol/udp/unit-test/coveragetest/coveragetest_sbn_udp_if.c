@@ -37,6 +37,7 @@
 #include "sbn_udp_if.h"
 #include "sbn_app.h"
 #include "sbn_error.h"
+#include "sbn_outbound_task.h"
 
 #define SBN_PROTOCOL_VERSION 6
 

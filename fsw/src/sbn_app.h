@@ -41,6 +41,7 @@
 #include "cfe_platform_cfg.h"
 
 #include "sbn_resource.h"
+//jphfix #include "sbn_worker_task.h"
 
 /* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 /*                                                                 */
@@ -59,28 +60,6 @@ typedef struct
     char                         FilterName[CFE_MISSION_MAX_API_LEN];
     const SBN_FilterInterface_t *Intf;
 } SBN_FilterModInfo_t;
-
-/* State info about a net that is kept locally in SCH, not shared with modules */
-typedef struct SBN_PollState
-{
-    bool InboundTaskMode;  /* if true, self-reschedules inbound activity.  This mimics an inbound task. */
-    bool InboundScheduled; /* If true, then inbound activity is scheduled on the job queue */
-} SBN_PollState_t;
-
-/* Container for net interface.  The "SBN_NetInterface_t" struct is shared with modules and
- * any changes to that structure may affect module compatibility.  The "SBN_NetLocalState_t"
- * struct is kept local and known to the SBN main app only. */
-typedef struct SBN_NetContainer
-{
-    SBN_PollState_t NetPoll; /* this part stays local to SBN main app and not seen by modules */
-    SBN_NetInterface_t  Intf;  /* this part is shared with modules and changes may affect module compatibility */
-} SBN_NetContainer_t;
-
-typedef struct SBN_PeerContainer
-{
-    SBN_PollState_t PeerPoll; /* this part stays local to SBN main app and not seen by modules */
-    SBN_PeerInterface_t  Intf;  /* this part is shared with modules and changes may affect module compatibility */
-} SBN_PeerContainer_t;
 
 /**
  * \brief SBN global data structure definition
@@ -120,6 +99,9 @@ typedef struct
      */
     SBN_Subs_t Subs[SBN_MISSION_MAX_SUBS_PER_PEER + 1];
 
+    /* Tracks individual changes to the local subscriptions */
+    SBN_SubChangeQ_t SubChangeQ;
+
     /** \brief CFE scheduling pipe */
     CFE_SB_PipeId_t SchPipe;
 
@@ -142,7 +124,9 @@ typedef struct
     SBN_NetIdx_t     ActiveNetCount;
 
     /* Buffer for receiving messages, allocated here to avoid stack smashing */
-    uint8 MsgBuffer[CFE_MISSION_SB_MAX_SB_MSG_SIZE];
+    uint8 MsgBufferJPHFIX[CFE_MISSION_SB_MAX_SB_MSG_SIZE];
+    uint8 TempMsg[SBN_PACKED_SUB_SZ];
+
 } SBN_AppData_t;
 
 /**
@@ -150,6 +134,7 @@ typedef struct
  */
 extern SBN_AppData_t SBN_AppData;
 
+#ifdef jphfix
 /* Use a struct for all local variables in the task so we can specify exactly
  * how large of a stack we need for the task.
  */
@@ -189,21 +174,21 @@ typedef struct
     CFE_MSG_Message_t   *MsgPtr;
     CFE_SB_MsgId_t       MsgID;
     SBN_NetInterface_t  *Net;
-    SBN_PeerInterface_t *Peer;
+    SBN_PeerRecord_t *PeerRec;
 } SBN_SendTaskData_t;
+
+#endif
 
 /*
 ** Prototypes
 */
 void         SBN_AppMain(void);
-SBN_Status_t SBN_ProcessNetMsg(SBN_NetInterface_t *Net,
-                               SBN_MsgType_t       MsgType,
-                               SBN_ProcessorID_t   ProcessorID,
-                               SBN_SpacecraftID_t  SpacecraftID,
-                               SBN_MsgSz_t         MsgSz,
-                               void               *Msg);
+SBN_Status_t SBN_ProcessPeerMsg(SBN_PeerRecord_t *PeerRec,
+                                SBN_BufferDesc_t *D);
 SBN_PeerInterface_t              *
 SBN_GetPeer(SBN_NetInterface_t *Net, SBN_ProcessorID_t ProcessorID, SBN_SpacecraftID_t SpacecraftID);
+SBN_PeerRecord_t *
+SBN_GetPeerRecord(SBN_NetRecord_t *NetRec, SBN_ProcessorID_t ProcessorID, SBN_SpacecraftID_t SpacecraftID);
 SBN_Status_t SBN_ReloadConfTbl(void);
 void         SBN_RecvNetTask(void);
 void         SBN_RecvPeerTask(void);

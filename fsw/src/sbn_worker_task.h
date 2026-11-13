@@ -24,16 +24,18 @@
 #include "cfe_mission_cfg.h"
 #include "sbn_types.h"
 #include "sbn_interfaces.h"
+//jphfix #include "sbn_resource.h"
 
 #define SBN_NUM_WORKER_TASKS    4
 
-/* Keep this to a power of 2, >= the number of worker tasks */
-#define SBN_WORKER_QUEUE_DEPTH  4
+/* Keep this to a power of 2, >= the number of worker tasks + max subscriptions */
+#define SBN_WORKER_QUEUE_DEPTH  512
 
 /* A small amount of extra buffer space for the SBN protocol messagse */
 #define SBN_WORKER_BUFFER_SZ   (SBN_PACKED_HDR_SZ + CFE_MISSION_SB_MAX_SB_MSG_SIZE)
 
-#define SBN_WORKER_TASK_STACK_SIZE 16384
+/* jphfix - this should be smaller */
+#define SBN_WORKER_TASK_STACK_SIZE 262144
 #define SBN_WORKER_TASK_PRIORITY   85
 
 #define SBN_WORKER_WAIT_TIME_MSEC  100
@@ -41,17 +43,41 @@
 typedef enum
 {
     SBN_WorkerTask_JobType_NONE,
+    SBN_WorkerTask_JobType_CHECK_CONNECTION,
+    SBN_WorkerTask_JobType_CONNECTION_CHANGE,
     SBN_WorkerTask_JobType_PEER_OUTBOUND,
     SBN_WorkerTask_JobType_PEER_INBOUND,
-    SBN_WorkerTask_JobType_NET_INBOUND
+    SBN_WorkerTask_JobType_NET_INBOUND,
+    SBN_WorkerTask_JobType_ADD_SUBSCRIPTION,
+    SBN_WorkerTask_JobType_REMOVE_SUBSCRIPTION,
 } SBN_WorkerTask_JobType_t;
+
+typedef struct SBN_WorkerTask_CommsInfo
+{
+    SBN_NetId_t  NetId;
+    SBN_PeerId_t PeerId;
+
+} SBN_WorkerTask_CommsInfo_t;
+
+typedef struct SBN_WorkerTask_SubsInfo
+{
+    CFE_SB_MsgId_t MsgId;
+    CFE_SB_Qos_t   Qos;
+
+} SBN_WorkerTask_SubsInfo_t;
+
+typedef union SBN_WorkerTask_Info
+{
+    SBN_WorkerTask_CommsInfo_t Comms;
+    SBN_WorkerTask_SubsInfo_t  Subs;
+} SBN_WorkerTask_Info_t;
+
 
 typedef struct SBN_WorkerTask_WorkItem
 {
     SBN_WorkerTask_JobType_t JobType;
 
-    SBN_NetIdx_t  NetIdx;
-    SBN_PeerIdx_t PeerIdx;
+    SBN_WorkerTask_Info_t Info;
 
 } SBN_WorkerTask_WorkItem_t;
 
@@ -62,7 +88,15 @@ typedef struct SBN_WorkerTask_Context
     SBN_WorkerTask_WorkItem_t Assignment;
     uint32 NumCompleted;
 
-    uint8 MessageBuffer[SBN_WORKER_BUFFER_SZ];
+    SBN_BufferDesc_t BufferDesc;
+
+    union
+    {
+        uint8 MessageBuffer[SBN_WORKER_BUFFER_SZ];
+        double AlignDbl;
+        unsigned long long AlignLong;
+    } u;
+
 } SBN_WorkerTask_Context_t;
 
 typedef struct SBN_WorkerTask_WorkQueue
@@ -71,15 +105,16 @@ typedef struct SBN_WorkerTask_WorkQueue
 
     SBN_WorkerTask_Context_t Tasks[SBN_NUM_WORKER_TASKS];
 
-    /* main "gate" to hold all workers, if needed */
-    bool   ShouldRun;
+    /* gate to hold all workers, if needed */
+    volatile bool   ShouldRun;
 
     /* instructs all workers to exit themselves */
-    bool   ShouldExit;
+    volatile bool   ShouldExit;
 
-    uint32 NumPosted;
-    uint32 NumClaimed;
-    uint32 NumCompleted;
+    volatile uint32 NumPosted;
+    volatile uint32 NumClaimed;
+    volatile uint32 NumCompleted;
+
     uint32 NumWorkers;
 
     osal_id_t Sync;

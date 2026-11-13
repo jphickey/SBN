@@ -23,7 +23,7 @@
 #include "sbn_app.h"
 #include "sbn_encode.h"
 
-static SBN_NetContainer_t *SBN_GetNetIfFromIdx(SBN_NetIdx_t Idx)
+static SBN_NetInterface_t *SBN_GetNetIfFromIdx(SBN_NetIdx_t Idx)
 {
     SBN_NetInterface_t *Net;
 
@@ -36,7 +36,7 @@ static SBN_NetContainer_t *SBN_GetNetIfFromIdx(SBN_NetIdx_t Idx)
     return Net;
 }
 
-static SBN_PeerInterface_t *SBN_GetPeerFromIdx(SBN_NetContainer_t *NetIf, SBN_PeerIdx_t Idx)
+static SBN_PeerInterface_t *SBN_GetPeerFromIdx(SBN_NetInterface_t *NetIf, SBN_PeerIdx_t Idx)
 {
     SBN_PeerInterface_t *Peer;
 
@@ -231,7 +231,7 @@ CFE_Status_t SBN_SendHkCmd(const SBN_SendHkCmd_t *MsgPtr)
 CFE_Status_t SBN_SendHkNetCmd(const SBN_SendHkNetCmd_t *MsgPtr)
 {
     const SBN_NetCmd_Payload_t *CmdPtr = &MsgPtr->Payload;
-    SBN_NetContainer_t         *NetIf;
+    SBN_NetInterface_t         *NetIf;
     SBN_TlmBase_t              *TlmBuf;
     SBN_HkNetTlm_t             *OutMsg;
 
@@ -262,8 +262,8 @@ CFE_Status_t SBN_SendHkNetCmd(const SBN_SendHkNetCmd_t *MsgPtr)
 
         OutMsg->TlmBase.TlmId = SBN_HK_NET_CC;
 
-        OutMsg->Payload.ProtocolIdx = NetIf->Intf.ProtocolIdx;
-        OutMsg->Payload.PeerCnt     = NetIf->Intf.PeerCnt;
+        OutMsg->Payload.ProtocolIdx = NetIf->ProtocolIdx;
+        OutMsg->Payload.PeerCnt     = NetIf->PeerCnt;
 
         /*
         ** Timestamp and send packet

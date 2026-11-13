@@ -31,6 +31,9 @@
 #include "sbn_dispatch.h"
 #include "sbn_module.h"
 #include "sbn_worker_task.h"
+#include "sbn_inbound_task.h"
+#include "sbn_outbound_task.h"
+#include "sbn_connection.h"
 
 /** \brief SBN global application data, indexed by AppID. */
 SBN_AppData_t SBN_AppData;
@@ -133,61 +136,13 @@ bool SBN_UnpackMsg(void               *SBNBuf,
  */
 SBN_Status_t SBN_Connected(SBN_PeerInterface_t *Peer)
 {
-    static const char FAIL_PREFIX[] = "ERROR: could not disconnect peer:";
-    SBN_Status_t      SBN_Status;
-    CFE_Status_t      CFE_Status;
-    char              PipeName[OS_MAX_API_NAME];
-
-    if (Peer->Connected != 0)
-    {
-        EVSSendErr(SBN_PEER_EID,
-                   "%s peer %d:%d already connected",
-                   FAIL_PREFIX,
-                   Peer->SpacecraftID,
-                   (int)(Peer->ProcessorID));
-        return SBN_ERROR;
-    } /* end if */
-
-    /* create a pipe name string similar to SBN_0_Pipe */
-    snprintf(PipeName, OS_MAX_API_NAME, "SBN_%d_%d_Pipe", (int)(Peer->ProcessorID), (int)(Peer->SpacecraftID));
-    CFE_Status = CFE_SB_CreatePipe(&(Peer->Pipe), SBN_PLATFORM_PEER_PIPE_DEPTH, PipeName);
-
-    if (CFE_Status != CFE_SUCCESS)
-    {
-        EVSSendErr(SBN_PEER_EID, "%s: could not create peer pipe '%s'", FAIL_PREFIX, PipeName);
-
-        return SBN_ERROR;
-    } /* end if */
-
-    EVSSendInfo(SBN_PEER_EID, "Created peer pipe '%s'", PipeName);
-
-    CFE_Status = CFE_SB_SetPipeOpts(Peer->Pipe, CFE_SB_PIPEOPTS_IGNOREMINE);
-    if (CFE_Status != CFE_SUCCESS)
-    {
-        EVSSendErr(SBN_PEER_EID, "%s: could not set pipe options '%s'", FAIL_PREFIX, PipeName);
-
-        return SBN_ERROR;
-    } /* end if */
-
-    EVSSendInfo(SBN_PEER_EID, "Peer %d:%d connected.", Peer->SpacecraftID, (int)(Peer->ProcessorID));
-
-    uint8             ProtocolVer;
-    ProtocolVer = SBN_PROTO_VER;
-    SBN_Status  = SBN_SendNetMsg(SBN_PROTO_MSG, sizeof(ProtocolVer), &ProtocolVer, Peer);
-    if (SBN_Status != SBN_SUCCESS)
-    {
-        return SBN_Status;
-    } /* end if */
+    EVSSendInfo(SBN_PEER_EID, "Peer %d:%d connected.", (int)Peer->SpacecraftID, (int)(Peer->ProcessorID));
 
     /* set this to current time so we don't think we've already timed out */
     OS_GetLocalTime(&Peer->LastRecv);
+    Peer->Connected = true;
 
-
-    SBN_Status = SBN_SendLocalSubsToPeer(Peer);
-
-    Peer->Connected = 1;
-
-    return SBN_Status;
+    return SBN_SUCCESS;
 } /* end SBN_Connected() */
 
 /**
@@ -198,64 +153,36 @@ SBN_Status_t SBN_Connected(SBN_PeerInterface_t *Peer)
  */
 SBN_Status_t SBN_Disconnected(SBN_PeerInterface_t *Peer)
 {
-    static const char FAIL_PREFIX[] = "ERROR: could not disconnect peer:";
-    CFE_Status_t      CFE_Status;
+    EVSSendDbg(SBN_PEERTASK_EID, "disconnect from peer %d:%d", (int)Peer->SpacecraftID, (int)Peer->ProcessorID);
 
-    if (Peer->Connected == 0)
-    {
-        EVSSendErr(SBN_PEER_EID,
-                   "%s already not connected to peer %d:%d",
-                   FAIL_PREFIX,
-                   Peer->SpacecraftID,
-                   (int)(Peer->ProcessorID));
-        return SBN_ERROR;
-    }
-
-    Peer->Connected = 0; /**< mark as disconnected before deleting pipe */
-
-    /* JPHFIX bad idea */
-    if ((CFE_Status = CFE_SB_DeletePipe(Peer->Pipe)) != CFE_SUCCESS)
-    {
-        EVSSendErr(SBN_PEER_EID,
-                   "%s could not delete pipe when disconnecting peer %d:%d: 0x%08x",
-                   FAIL_PREFIX,
-                   Peer->SpacecraftID,
-                   Peer->ProcessorID,
-                   CFE_Status);
-    }
-    Peer->Pipe = CFE_SB_INVALID_PIPE;
-
-    Peer->SubCnt = 0; /* reset sub count, in case this is a reconnection */
-
-    EVSSendInfo(SBN_PEER_EID, "Disconnected from peer %d:%d.", Peer->SpacecraftID, (int)(Peer->ProcessorID));
+    Peer->Connected = false; /* mark as disconnected */
 
     return SBN_SUCCESS;
 } /* end SBN_Disconnected() */
 
-SBN_Status_t SBN_MatchRecvPeerToTask(SBN_PeerRecord_t *PeerRec, void *Arg)
-<<<<<<< HEAD
-=======
+/**
+ * Sends a message to a peer using the module's send API.
+ *
+ * @param MsgType SBN type of the message
+ * @param MsgSz Size of the message
+ * @param Msg Message to send
+ * @param Peer The peer to send the message to.
+ * @return Number of characters sent on success, -1 on error.
+ *
+ */
+SBN_Status_t SBN_SendNetMsg(SBN_MsgType_t MsgType, SBN_MsgSz_t MsgSz, void *Msg, SBN_PeerInterface_t *Peer)
 {
-    SBN_RecvPeerTaskData_t *D = Arg;
-    SBN_NetRecord_t        *Net;
+    SBN_BufferDesc_t TempDesc;
 
-    if (CFE_RESOURCEID_TEST_EQUAL(PeerRec->Intf.RecvTaskID, D->RecvTaskID))
-    {
-        Net = SBN_LocateNetRecordByID(PeerRec->NetId);
+    memset(&TempDesc, 0, sizeof(TempDesc));
 
-        if (SBN_NetRecordIsMatch(Net, PeerRec->NetId))
-        {
-            D->Peer   = &PeerRec->Intf;
-            D->Net    = &Net->Intf;
-            D->PeerId = PeerRec->PeerId;
-            D->NetId  = PeerRec->NetId;
+    TempDesc.MsgType = MsgType;
+    TempDesc.ActualDataSz = MsgSz;
+    TempDesc.MaxDataSz = MsgSz;
+    TempDesc.DataPtr = Msg;
 
-            return SBN_FINISHED; /* just needs to be nonzero for iteration to stop */
-        }
-    }
-
-    return SBN_SUCCESS;
-}
+    return SBN_Outbound_SendToPeer(Peer, &TempDesc);
+} /* end SBN_SendNetMsg */
 
 /**
  * Loops through all hosts and peers, initializing all.
@@ -346,7 +273,7 @@ static SBN_Status_t SBN_WaitForWakeup(int32 iTimeOut)
     */
     CFE_ES_PerfLogEntry(SBN_PERF_RECV_ID);
 
-    SBN_RecvNetMsgs();
+    SBN_InboundPollCycle();
 
     SBN_Status = SBN_CheckSubscriptionPipe();
     switch (SBN_Status)
@@ -360,6 +287,9 @@ static SBN_Status_t SBN_WaitForWakeup(int32 iTimeOut)
             /* no error */
             break;
     };
+
+    SBN_OutboundPollCycle();
+    SBN_Connection_PollCycle();
 
 #ifdef jphfix
     SBN_CheckPeerPipes();
@@ -700,6 +630,9 @@ static void SBN_InitPeersFromConfig(const SBN_ConfTbl_t *ConfTbl)
                 ProtoEntry->Intf->LoadNet(Net, LocalBuf.Address);
 
                 FilterList = Net->Filters;
+
+                /* If this RecvFromNet is provided then inbound traffic is scheduled at the net level */
+                NetRec->State.InboundSchedulingEnabled = (ProtoEntry->Intf->RecvFromNet != NULL);
             }
             else
             {
@@ -728,6 +661,9 @@ static void SBN_InitPeersFromConfig(const SBN_ConfTbl_t *ConfTbl)
                 ProtoEntry->Intf->LoadPeer(Peer, LocalBuf.Address);
 
                 FilterList = Peer->Filters;
+
+                /* If this RecvFromPeer is provided then inbound traffic is scheduled at the peer level */
+                PeerRec->State.InboundSchedulingEnabled = (ProtoEntry->Intf->RecvFromPeer != NULL);
             }
         }
 
@@ -826,19 +762,11 @@ static SBN_Status_t SBN_UnloadConf(void)
     return Status;
 } /* end SBN_UnloadConf() */
 
-static SBN_Status_t SBN_UnloadPeer(SBN_PeerInterface_t *Peer)
+static SBN_Status_t SBN_UnloadPeer(SBN_PeerRecord_t *PeerRec)
 {
-    SBN_RemoveAllSubsFromPeer(Peer);
+    SBN_RemoveAllSubsFromPeer(PeerRec);
 
-    SBN_Disconnected(Peer);
-
-    // Reset peer description
-    Peer->ProcessorID  = 0;
-    Peer->SpacecraftID = 0;
-    Peer->Net          = NULL;
-    Peer->TaskFlags    = 0;
-    Peer->Pipe         = CFE_SB_INVALID_PIPE;
-    Peer->FilterCnt    = 0;
+    SBN_Disconnected(&PeerRec->Intf);
 
     return SBN_SUCCESS;
 }
@@ -855,24 +783,13 @@ static SBN_Status_t SBN_DoUnloadNet(SBN_NetRecord_t *NetRec, void *Arg)
 
     Net->Configured = false;
 
-    if (CFE_RESOURCEID_TEST_DEFINED(Net->RecvTaskID))
-    {
-        if (CFE_ES_DeleteChildTask(Net->RecvTaskID) != CFE_SUCCESS)
-        {
-            EVSSendCrit(SBN_TBL_EID, "unable to delete receive task %d", SBN_NetId_AsInt(NetRec->NetId));
-            ++(*Errs);
-        }
-
-        Net->RecvTaskID = CFE_ES_TASKID_UNDEFINED;
-    }
-
     for (PeerIdx = 0; PeerIdx < Net->PeerCnt; PeerIdx++)
     {
         PeerRec = SBN_LocatePeerRecordByID(Net->PeerIds[PeerIdx]);
 
         if (SBN_PeerRecordIsMatch(PeerRec, Net->PeerIds[PeerIdx]))
         {
-            SBN_UnloadPeer(&PeerRec->Intf);
+            SBN_UnloadPeer(PeerRec);
 
             if (Net->IfOps && Net->IfOps->UnloadPeer)
             {
@@ -1273,37 +1190,29 @@ void SBN_AppMain(void)
  *
  * @return SBN_SUCCESS on successful processing, SBN_ERROR otherwise
  */
-SBN_Status_t SBN_ProcessNetMsg(SBN_NetInterface_t *Net,
-                               SBN_MsgType_t       MsgType,
-                               SBN_ProcessorID_t   ProcessorID,
-                               SBN_SpacecraftID_t  SpacecraftID,
-                               SBN_MsgSz_t         MsgSz,
-                               void               *Msg)
+SBN_Status_t SBN_ProcessPeerMsg(SBN_PeerRecord_t *PeerRec,
+                                SBN_BufferDesc_t *D)
 {
     static const char    FAIL_PREFIX[] = "ERROR: could not process peer message:";
     SBN_Status_t         SBN_Status;
     CFE_Status_t         CFE_Status;
-    SBN_PeerInterface_t *Peer;
     uint8                Ver;
     SBN_ModuleIdx_t      FilterIdx;
     SBN_Filter_Ctx_t     Filter_Context;
+    void *Msg;
 
-    Peer = SBN_GetPeer(Net, ProcessorID, SpacecraftID);
-
-    if (!Peer)
-    {
-        EVSSendErr(SBN_PEERTASK_EID, "%s unknown peer (ProcessorID=%d)", FAIL_PREFIX, (int)ProcessorID);
-        return SBN_ERROR;
-    } /* end if */
+    /* This should always update the LastRecv time */
+    Msg = D->DataPtr;
+    OS_GetLocalTime(&PeerRec->Intf.LastRecv);
 
     /* Check if message is protocol-specific (unkown to SBN core) */
-    if (MsgType & SBN_MODULE_SPECIFIC_MESSAGE_ID_MASK)
+    if (D->MsgType & SBN_MODULE_SPECIFIC_MESSAGE_ID_MASK)
     {
-        EVSSendDbg(SBN_PEERTASK_EID, "SBN received module-specific message type: 0x%08x", MsgType);
+        EVSSendDbg(SBN_PEERTASK_EID, "SBN received module-specific message type: 0x%08x", (unsigned int)D->MsgType);
         return SBN_SUCCESS;
     }
 
-    switch (MsgType)
+    switch (D->MsgType)
     {
         case SBN_PROTO_MSG:
         {
@@ -1314,8 +1223,8 @@ SBN_Status_t SBN_ProcessNetMsg(SBN_NetInterface_t *Net,
                            "%s SBN protocol version mismatch with peer %d:%d, "
                            "my version=%d, peer version %d",
                            FAIL_PREFIX,
-                           Peer->SpacecraftID,
-                           (int)Peer->ProcessorID,
+                           (int)PeerRec->Intf.SpacecraftID,
+                           (int)PeerRec->Intf.ProcessorID,
                            (int)SBN_PROTO_VER,
                            (int)Ver);
             }
@@ -1323,26 +1232,27 @@ SBN_Status_t SBN_ProcessNetMsg(SBN_NetInterface_t *Net,
             {
                 EVSSendInfo(SBN_SB_EID,
                             "SBN protocol version match with peer %d:%d",
-                            (int)Peer->SpacecraftID,
-                            (int)Peer->ProcessorID);
+                            (int)PeerRec->Intf.SpacecraftID,
+                            (int)PeerRec->Intf.ProcessorID);
             } /* end if */
             break;
         } /* end case */
         case SBN_APP_MSG:
         {
+            /* jphfix - use common code */
             Filter_Context.MyProcessorID    = CFE_PSP_GetProcessorId();
             Filter_Context.MySpacecraftID   = CFE_PSP_GetSpacecraftId();
-            Filter_Context.PeerProcessorID  = Peer->ProcessorID;
-            Filter_Context.PeerSpacecraftID = Peer->SpacecraftID;
+            Filter_Context.PeerProcessorID  = PeerRec->Intf.ProcessorID;
+            Filter_Context.PeerSpacecraftID = PeerRec->Intf.SpacecraftID;
 
-            for (FilterIdx = 0; FilterIdx < Peer->FilterCnt; FilterIdx++)
+            for (FilterIdx = 0; FilterIdx < PeerRec->Intf.FilterCnt; FilterIdx++)
             {
-                if (Peer->Filters[FilterIdx]->FilterRecv == NULL)
+                if (PeerRec->Intf.Filters[FilterIdx]->FilterRecv == NULL)
                 {
                     continue;
                 } /* end if */
 
-                SBN_Status = (Peer->Filters[FilterIdx]->FilterRecv)(Msg, &Filter_Context);
+                SBN_Status = (PeerRec->Intf.Filters[FilterIdx]->FilterRecv)(Msg, &Filter_Context);
 
                 /* includes SBN_IF_EMPTY, for when filter recommends removing */
                 if (SBN_Status != SBN_SUCCESS)
@@ -1359,27 +1269,49 @@ SBN_Status_t SBN_ProcessNetMsg(SBN_NetInterface_t *Net,
                            "%s CFE_SB_PassMsg error (Status=%d MsgType=0x%x)",
                            FAIL_PREFIX,
                            (int)CFE_Status,
-                           MsgType);
+                           (unsigned int)D->MsgType);
                 return SBN_ERROR;
             } /* end if */
             break;
         } /* end case */
         case SBN_SUB_MSG:
-            return SBN_ProcessSubsFromPeer(Peer, Msg);
+            return SBN_ProcessSubsFromPeer(PeerRec, Msg);
 
         case SBN_UNSUB_MSG:
-            return SBN_ProcessUnsubsFromPeer(Peer, Msg);
+            return SBN_ProcessUnsubsFromPeer(PeerRec, Msg);
 
         case SBN_NO_MSG:
             return SBN_SUCCESS;
         default:
             /* Should I generate an event? Probably... */
-            EVSSendErr(SBN_PEERTASK_EID, "%s unknown message type 0x%08x", FAIL_PREFIX, MsgType);
+            EVSSendErr(SBN_PEERTASK_EID, "%s unknown message type 0x%08x", FAIL_PREFIX, (unsigned int)D->MsgType);
             return SBN_ERROR;
     } /* end switch */
 
     return SBN_SUCCESS;
 } /* end SBN_ProcessNetMsg */
+
+SBN_PeerRecord_t *
+SBN_GetPeerRecord(SBN_NetRecord_t *NetRec, SBN_ProcessorID_t ProcessorID, SBN_SpacecraftID_t SpacecraftID)
+{
+    SBN_PeerIdx_t     PeerIdx;
+    SBN_PeerId_t      PeerId;
+    SBN_PeerRecord_t *PeerRec;
+
+    for (PeerIdx = 0; PeerIdx < NetRec->Intf.PeerCnt; PeerIdx++)
+    {
+        PeerId  = NetRec->Intf.PeerIds[PeerIdx];
+        PeerRec = SBN_LocatePeerRecordByID(PeerId);
+
+        if (SBN_PeerRecordIsMatch(PeerRec, PeerId) && PeerRec->Intf.ProcessorID == ProcessorID
+            && PeerRec->Intf.SpacecraftID == SpacecraftID)
+        {
+            return PeerRec;
+        }
+    }
+
+    return NULL;
+}
 
 /**
  * Find the PeerIndex for a given ProcessorID and net.

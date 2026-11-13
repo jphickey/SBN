@@ -64,6 +64,19 @@ typedef struct SBN_IfOps_s         SBN_IfOps_t;
 typedef struct SBN_NetInterface_s  SBN_NetInterface_t;
 typedef struct SBN_PeerInterface_s SBN_PeerInterface_t;
 
+typedef struct SBN_NetRecord  SBN_NetRecord_t;
+typedef struct SBN_PeerRecord SBN_PeerRecord_t;
+
+typedef struct SBN_BufferDesc
+{
+    SBN_ProcessorID_t    ProcessorID;
+    SBN_SpacecraftID_t   SpacecraftID;
+    SBN_MsgType_t        MsgType;
+    SBN_MsgSz_t          ActualDataSz;
+    SBN_MsgSz_t          MaxDataSz;
+    void                *DataPtr;
+} SBN_BufferDesc_t;
+
 /**
  * SBN packs messages for transmission over the wire, reducing the size to the minimum
  * required (structs in memory are padded to align values and pointers to CPU-friendly

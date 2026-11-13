@@ -19,14 +19,39 @@
 #ifndef _sbn_subs_h_
 #define _sbn_subs_h_
 
-#include "sbn_app.h"
+#include "sbn_interfaces.h"
+#include "cfe_sb_msg.h"
 
-SBN_Status_t SBN_SendLocalSubsToPeer(SBN_PeerInterface_t *Peer);
+#define SBN_SUBSCRIPTION_UPDATE_QUEUE_DEPTH 8
+#define SBN_SUBSCRIPTION_UPDATE_QUEUE_MASK  (SBN_SUBSCRIPTION_UPDATE_QUEUE_DEPTH - 1)
+
+typedef struct SBN_SubChange
+{
+    bool IsSubscribe; /* true if subscription, false if unsubscription */
+
+    CFE_SB_MsgId_t MsgId;
+    CFE_SB_Qos_t   Qos;
+
+} SBN_SubChange_t;
+
+typedef struct SBN_SubChangeQ
+{
+    uint32 CurrVersion;
+    SBN_SubChange_t Change[SBN_SUBSCRIPTION_UPDATE_QUEUE_DEPTH];
+
+} SBN_SubChangeQ_t;
+
+SBN_SubChange_t *SBN_Subs_GetPrevChangeRec(SBN_SubChangeQ_t *ChangeQ, uint32 Version);
+void SBN_Subs_RegisterChange(SBN_SubChangeQ_t *ChangeQ, bool IsSubscribe, CFE_SB_MsgId_t MsgId, CFE_SB_Qos_t Qos);
+void SBN_Subs_InvalidateChangeQ(SBN_SubChangeQ_t *ChangeQ);
+void SBN_Subs_UpdatePeer(SBN_PeerRecord_t *PeerRec, SBN_BufferDesc_t *D);
+
+SBN_Status_t SBN_SendLocalSubsToPeer(SBN_PeerRecord_t *PeerRec, SBN_BufferDesc_t *D);
 SBN_Status_t SBN_CheckSubscriptionPipe(void);
-SBN_Status_t SBN_ProcessSubsFromPeer(SBN_PeerInterface_t *Peer, void *Msg);
-SBN_Status_t SBN_ProcessUnsubsFromPeer(SBN_PeerInterface_t *Peer, void *Msg);
+SBN_Status_t SBN_ProcessSubsFromPeer(SBN_PeerRecord_t *PeerRec, void *Msg);
+SBN_Status_t SBN_ProcessUnsubsFromPeer(SBN_PeerRecord_t *PeerRec, void *Msg);
 SBN_Status_t SBN_ProcessAllSubscriptions(CFE_SB_AllSubscriptionsTlm_t *Ptr);
-SBN_Status_t SBN_RemoveAllSubsFromPeer(SBN_PeerInterface_t *Peer);
+SBN_Status_t SBN_RemoveAllSubsFromPeer(SBN_PeerRecord_t *PeerRec);
 SBN_Status_t SBN_SendSubsRequests(void);
 
 #endif /* _sbn_subs_h_ */
