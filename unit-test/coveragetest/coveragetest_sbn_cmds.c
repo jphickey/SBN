@@ -18,9 +18,7 @@
 
 #include "sbn_coveragetest_common.h"
 #include "sbn_app.h"
-#include "cfe_msgids.h"
-#include "cfe_sb_eventids.h"
-#include "sbn_pack.h"
+#include "sbn_encode.h"
 #include "sbn_dispatch.h"
 
 union
@@ -41,6 +39,14 @@ union
 
 } Buffer;
 
+union
+{
+    SBN_HKTlm_t HkTlm;
+    SBN_HkNetTlm_t HkNetTlm;
+    SBN_HkPeerSubsTlm_t HkPeerSubsTlm;
+    SBN_HkMySubsTlm_t HkMySubsTlm;
+} SBN_UT_TlmBuf;
+
 CFE_MSG_Message_t *CmdPktPtr = &Buffer.Buf.Msg;
 CFE_MSG_Size_t     MsgSz     = sizeof(CFE_MSG_CommandHeader_t);
 CFE_MSG_FcnCode_t  FcnCode   = SBN_NOOP_CC;
@@ -58,30 +64,10 @@ static void UT_SBN_MsgInitHelper(void)
 
 #define MSGINIT(x) UT_SBN_MsgInitHelper()
 
-static void NOOP_MsgLenErr(void)
-{
-    START();
-    UT_ResetState(0);
-
-    UT_CheckEvent_Setup(SBN_CMD_EID, "invalid no-op command");
-
-    memset(&Buffer, 0, sizeof(Buffer));
-
-    MsgSz   = -1;
-    FcnCode = SBN_NOOP_CC;
-    MSGINIT();
-
-    UT_SetDeferredRetcode(UT_KEY(CFE_MSG_GetSize), 1, -1);
-
-    SBN_HandleCommand(&Buffer.Buf);
-
-    EVENT_CNT(1);
-} /* end NOOP_MsgLenErr() */
-
 static void NOOP_Nominal(void)
 {
     START();
-    UT_ResetState(0);
+
 
     UT_CheckEvent_Setup(SBN_CMD_EID, "no-op command");
 
@@ -91,33 +77,16 @@ static void NOOP_Nominal(void)
     FcnCode = SBN_NOOP_CC;
     MSGINIT();
 
-    SBN_HandleCommand(&Buffer.Buf);
+    SBN_NoopCmd(&Buffer.NoopCmd);
 
     EVENT_CNT(1);
 } /* end NOOP_Nominal() */
 
-static void HKNet_MsgLenErr(void)
-{
-    START();
-    UT_ResetState(0);
-
-    UT_CheckEvent_Setup(SBN_CMD_EID, "hk command, net=");
-
-    memset(&Buffer, 0, sizeof(Buffer));
-
-    MsgSz   = -1;
-    FcnCode = SBN_HK_NET_CC;
-    MSGINIT();
-
-    SBN_HandleCommand(&Buffer.Buf);
-
-    EVENT_CNT(0);
-} /* end HKNet_MsgLenErr() */
-
 static void HKNet_NetIdErr(void)
 {
     START();
-    UT_ResetState(0);
+
+    UT_ResetState(UT_KEY(SBN_LocateNetRecordByExtIdx));
 
     UT_CheckEvent_Setup(SBN_CMD_EID, "Invalid NetIdx ");
 
@@ -128,7 +97,7 @@ static void HKNet_NetIdErr(void)
     FcnCode = SBN_HK_NET_CC;
     MSGINIT();
 
-    SBN_HandleCommand(&Buffer.Buf);
+    SBN_SendHkNetCmd(&Buffer.SendHkNetCmd);
 
     EVENT_CNT(1);
 } /* end HKNet_NetIdErr() */
@@ -136,8 +105,8 @@ static void HKNet_NetIdErr(void)
 static void HKNet_Nominal(void)
 {
     START();
-    UT_ResetState(0);
 
+    UT_SetDefaultReturnValue(UT_KEY(SBN_Codec_GetTlmBuffer), (UT_IntReturn_t) &SBN_UT_TlmBuf);
     UT_CheckEvent_Setup(SBN_CMD_EID, "hk command, net=");
 
     memset(&Buffer, 0, sizeof(Buffer));
@@ -146,33 +115,16 @@ static void HKNet_Nominal(void)
     FcnCode = SBN_HK_NET_CC;
     MSGINIT();
 
-    SBN_HandleCommand(&Buffer.Buf);
+    SBN_SendHkNetCmd(&Buffer.SendHkNetCmd);
 
     EVENT_CNT(1);
 } /* end HKNet_Nominal() */
 
-static void HKPeer_MsgLenErr(void)
-{
-    START();
-    UT_ResetState(0);
-
-    UT_CheckEvent_Setup(SBN_CMD_EID, "hk command, net=");
-
-    memset(&Buffer, 0, sizeof(Buffer));
-
-    MsgSz   = -1;
-    FcnCode = SBN_HK_PEER_CC;
-    MSGINIT();
-
-    SBN_HandleCommand(&Buffer.Buf);
-
-    EVENT_CNT(0);
-} /* end HKPeer_MsgLenErr() */
-
 static void HKPeer_NetIdErr(void)
 {
     START();
-    UT_ResetState(0);
+
+    UT_ResetState(UT_KEY(SBN_LocateNetRecordByExtIdx));
 
     UT_CheckEvent_Setup(SBN_CMD_EID, "Invalid NetIdx ");
 
@@ -183,7 +135,7 @@ static void HKPeer_NetIdErr(void)
     FcnCode = SBN_HK_PEER_CC;
     MSGINIT();
 
-    SBN_HandleCommand(&Buffer.Buf);
+    SBN_SendHkPeerCmd(&Buffer.SendHkPeerCmd);
 
     EVENT_CNT(1);
 } /* end HKPeer_NetIdErr() */
@@ -191,7 +143,8 @@ static void HKPeer_NetIdErr(void)
 static void HKPeer_PeerIdErr(void)
 {
     START();
-    UT_ResetState(0);
+
+    UT_ResetState(UT_KEY(SBN_LocatePeerRecordInNet));
 
     UT_CheckEvent_Setup(SBN_CMD_EID, "Invalid PeerIdx ");
 
@@ -202,7 +155,7 @@ static void HKPeer_PeerIdErr(void)
     FcnCode = SBN_HK_PEER_CC;
     MSGINIT();
 
-    SBN_HandleCommand(&Buffer.Buf);
+    SBN_SendHkPeerCmd(&Buffer.SendHkPeerCmd);
 
     EVENT_CNT(1);
 } /* end HKPeer_PeerIdErr() */
@@ -210,7 +163,8 @@ static void HKPeer_PeerIdErr(void)
 static void HKPeer_Nominal(void)
 {
     START();
-    UT_ResetState(0);
+
+    UT_SetDefaultReturnValue(UT_KEY(SBN_Codec_GetTlmBuffer), (UT_IntReturn_t) &SBN_UT_TlmBuf);
 
     UT_CheckEvent_Setup(SBN_CMD_EID, "hk peer command, net=");
 
@@ -220,33 +174,16 @@ static void HKPeer_Nominal(void)
     FcnCode = SBN_HK_PEER_CC;
     MSGINIT();
 
-    SBN_HandleCommand(&Buffer.Buf);
+    SBN_SendHkPeerCmd(&Buffer.SendHkPeerCmd);
 
     EVENT_CNT(1);
 } /* end HKPeer_Nominal() */
 
-static void HKPeerSubs_MsgLenErr(void)
-{
-    START();
-    UT_ResetState(0);
-
-    UT_CheckEvent_Setup(SBN_CMD_EID, "hk subs command, net=");
-
-    memset(&Buffer, 0, sizeof(Buffer));
-
-    MsgSz   = -1;
-    FcnCode = SBN_HK_PEERSUBS_CC;
-    MSGINIT();
-
-    SBN_HandleCommand(&Buffer.Buf);
-
-    EVENT_CNT(0);
-} /* end HKPeerSubs_MsgLenErr() */
-
 static void HKPeerSubs_NetIdErr(void)
 {
     START();
-    UT_ResetState(0);
+
+    UT_ResetState(UT_KEY(SBN_LocateNetRecordByExtIdx));
 
     UT_CheckEvent_Setup(SBN_CMD_EID, "Invalid NetIdx ");
 
@@ -257,7 +194,7 @@ static void HKPeerSubs_NetIdErr(void)
     FcnCode = SBN_HK_PEERSUBS_CC;
     MSGINIT();
 
-    SBN_HandleCommand(&Buffer.Buf);
+    SBN_SendHkPeerSubsCmd(&Buffer.SendHkPeerSubsCmd);
 
     EVENT_CNT(1);
 } /* end HKPeerSubs_NetIdErr() */
@@ -265,7 +202,8 @@ static void HKPeerSubs_NetIdErr(void)
 static void HKPeerSubs_PeerIdErr(void)
 {
     START();
-    UT_ResetState(0);
+
+    UT_ResetState(UT_KEY(SBN_LocatePeerRecordInNet));
 
     UT_CheckEvent_Setup(SBN_CMD_EID, "Invalid PeerIdx ");
 
@@ -276,7 +214,7 @@ static void HKPeerSubs_PeerIdErr(void)
     FcnCode = SBN_HK_PEERSUBS_CC;
     MSGINIT();
 
-    SBN_HandleCommand(&Buffer.Buf);
+    SBN_SendHkPeerSubsCmd(&Buffer.SendHkPeerSubsCmd);
 
     EVENT_CNT(1);
 } /* end HKPeerSubs_PeerIdErr() */
@@ -284,7 +222,8 @@ static void HKPeerSubs_PeerIdErr(void)
 static void HKPeerSubs_Nominal(void)
 {
     START();
-    UT_ResetState(0);
+
+    UT_SetDefaultReturnValue(UT_KEY(SBN_Codec_GetTlmBuffer), (UT_IntReturn_t) &SBN_UT_TlmBuf);
 
     UT_CheckEvent_Setup(SBN_CMD_EID, "hk subs command, net=");
 
@@ -296,33 +235,16 @@ static void HKPeerSubs_Nominal(void)
     FcnCode = SBN_HK_PEERSUBS_CC;
     MSGINIT();
 
-    SBN_HandleCommand(&Buffer.Buf);
+    SBN_SendHkPeerSubsCmd(&Buffer.SendHkPeerSubsCmd);
 
     EVENT_CNT(1);
 } /* end HKPeerSubs_Nominal() */
 
-static void HKMySubs_MsgLenErr(void)
-{
-    START();
-    UT_ResetState(0);
-
-    UT_CheckEvent_Setup(SBN_CMD_EID, "hk subs command");
-
-    memset(&Buffer, 0, sizeof(Buffer));
-
-    MsgSz   = -1;
-    FcnCode = SBN_HK_MYSUBS_CC;
-    MSGINIT();
-
-    SBN_HandleCommand(&Buffer.Buf);
-
-    EVENT_CNT(0);
-} /* end HKMySubs_MsgLenErr() */
-
 static void HKMySubs_Nominal(void)
 {
     START();
-    UT_ResetState(0);
+
+    UT_SetDefaultReturnValue(UT_KEY(SBN_Codec_GetTlmBuffer), (UT_IntReturn_t) &SBN_UT_TlmBuf);
 
     UT_CheckEvent_Setup(SBN_CMD_EID, "hk subs command");
 
@@ -334,33 +256,15 @@ static void HKMySubs_Nominal(void)
     FcnCode = SBN_HK_MYSUBS_CC;
     MSGINIT();
 
-    SBN_HandleCommand(&Buffer.Buf);
+    SBN_SendHkMySubsCmd(&Buffer.SendHkMySubsCmd);
 
     EVENT_CNT(1);
 } /* end HKMySubs_Nominal() */
 
-static void HKReset_MsgLenErr(void)
-{
-    START();
-    UT_ResetState(0);
-
-    UT_CheckEvent_Setup(SBN_CMD_EID, "reset command");
-
-    memset(&Buffer, 0, sizeof(Buffer));
-
-    MsgSz   = -1;
-    FcnCode = SBN_HK_RESET_CC;
-    MSGINIT();
-
-    SBN_HandleCommand(&Buffer.Buf);
-
-    EVENT_CNT(0);
-} /* end HKReset_MsgLenErr() */
-
 static void HKReset_Nominal(void)
 {
     START();
-    UT_ResetState(0);
+
 
     UT_CheckEvent_Setup(SBN_CMD_EID, "reset command");
 
@@ -370,33 +274,16 @@ static void HKReset_Nominal(void)
     FcnCode = SBN_HK_RESET_CC;
     MSGINIT();
 
-    SBN_HandleCommand(&Buffer.Buf);
+    SBN_ResetCmd(&Buffer.ResetCmd);
 
     EVENT_CNT(1);
 } /* end HKReset_Nominal() */
 
-static void HKResetPeer_MsgLenErr(void)
-{
-    START();
-    UT_ResetState(0);
-
-    UT_CheckEvent_Setup(SBN_CMD_EID, "invalid message length (Name=");
-
-    memset(&Buffer, 0, sizeof(Buffer));
-
-    MsgSz   = -1;
-    FcnCode = SBN_HK_RESET_PEER_CC;
-    MSGINIT();
-
-    SBN_HandleCommand(&Buffer.Buf);
-
-    EVENT_CNT(1);
-} /* end HKResetPeer_MsgLenErr() */
-
 static void HKResetPeer_NetIdErr(void)
 {
     START();
-    UT_ResetState(0);
+
+    UT_ResetState(UT_KEY(SBN_LocateNetRecordByExtIdx));
 
     UT_CheckEvent_Setup(SBN_CMD_EID, "Invalid NetIdx ");
 
@@ -407,7 +294,7 @@ static void HKResetPeer_NetIdErr(void)
     FcnCode = SBN_HK_RESET_PEER_CC;
     MSGINIT();
 
-    SBN_HandleCommand(&Buffer.Buf);
+    SBN_ResetPeerCmd(&Buffer.ResetPeerCmd);
 
     EVENT_CNT(1);
 } /* end HKResetPeer_NetIdErr() */
@@ -415,7 +302,8 @@ static void HKResetPeer_NetIdErr(void)
 static void HKResetPeer_PeerIdErr(void)
 {
     START();
-    UT_ResetState(0);
+
+    UT_ResetState(UT_KEY(SBN_LocatePeerRecordInNet));
 
     UT_CheckEvent_Setup(SBN_CMD_EID, "Invalid PeerIdx ");
 
@@ -426,7 +314,7 @@ static void HKResetPeer_PeerIdErr(void)
     FcnCode = SBN_HK_RESET_PEER_CC;
     MSGINIT();
 
-    SBN_HandleCommand(&Buffer.Buf);
+    SBN_ResetPeerCmd(&Buffer.ResetPeerCmd);
 
     EVENT_CNT(1);
 } /* end HKResetPeer_PeerIdErr() */
@@ -434,7 +322,7 @@ static void HKResetPeer_PeerIdErr(void)
 static void HKResetPeer_Nominal(void)
 {
     START();
-    UT_ResetState(0);
+
 
     UT_CheckEvent_Setup(SBN_CMD_EID, "hk reset peer command (NetIdx=");
 
@@ -444,7 +332,7 @@ static void HKResetPeer_Nominal(void)
     FcnCode = SBN_HK_RESET_PEER_CC;
     MSGINIT();
 
-    SBN_HandleCommand(&Buffer.Buf);
+    SBN_ResetPeerCmd(&Buffer.ResetPeerCmd);
 
     EVENT_CNT(1);
 } /* end HKResetPeer_Nominal() */
@@ -452,7 +340,7 @@ static void HKResetPeer_Nominal(void)
 static void SCH_Nominal(void)
 {
     START();
-    UT_ResetState(0);
+
 
     UT_CheckEvent_Setup(SBN_CMD_EID, "wakeup");
 
@@ -462,33 +350,16 @@ static void SCH_Nominal(void)
     FcnCode = SBN_SCH_WAKEUP_CC;
     MSGINIT();
 
-    SBN_HandleCommand(&Buffer.Buf);
+    SBN_WakeupCmd(&Buffer.WakeupCmd);
 
     EVENT_CNT(1);
 } /* end SCH_Nominal() */
 
-static void TBL_MsgLenErr(void)
-{
-    START();
-    UT_ResetState(0);
-
-    UT_CheckEvent_Setup(SBN_CMD_EID, "reload tbl command");
-
-    memset(&Buffer, 0, sizeof(Buffer));
-
-    MsgSz   = -1;
-    FcnCode = SBN_TBL_CC;
-    MSGINIT();
-
-    SBN_HandleCommand(&Buffer.Buf);
-
-    EVENT_CNT(0);
-} /* end TBL_MsgLenErr() */
 
 static void TBL_Nominal(void)
 {
     START();
-    UT_ResetState(0);
+
 
     UT_CheckEvent_Setup(SBN_CMD_EID, "reload tbl command");
 
@@ -498,70 +369,15 @@ static void TBL_Nominal(void)
     FcnCode = SBN_TBL_CC;
     MSGINIT();
 
-    SBN_HandleCommand(&Buffer.Buf);
+    SBN_ReloadTblCmd(&Buffer.ReloadTblCmd);
 
     EVENT_CNT(1);
 } /* end TBL_Nominal() */
 
-static void CC_Err(void)
-{
-    START();
-    UT_ResetState(0);
-
-    UT_CheckEvent_Setup(SBN_CMD_EID, "invalid command code (ID=0x");
-
-    memset(&Buffer, 0, sizeof(Buffer));
-
-    MsgSz   = sizeof(CFE_MSG_CommandHeader_t);
-    FcnCode = SBN_TBL_CC + 10;
-    MSGINIT();
-
-    SBN_HandleCommand(&Buffer.Buf);
-
-    EVENT_CNT(1);
-} /* end CC_Err() */
-
-static void HK_MsgLenErr(void)
-{
-    START();
-    UT_ResetState(0);
-
-    UT_CheckEvent_Setup(SBN_CMD_EID, "hk command");
-
-    memset(&Buffer, 0, sizeof(Buffer));
-
-    MsgSz   = -1;
-    FcnCode = SBN_HK_CC;
-    MSGINIT();
-
-    SBN_HandleCommand(&Buffer.Buf);
-
-    EVENT_CNT(0);
-} /* end HK_MsgLenErr() */
-
-static void HK_MsgLenErr2(void)
-{
-    START();
-    UT_ResetState(0);
-
-    UT_CheckEvent_Setup(SBN_CMD_EID, "hk command");
-
-    memset(&Buffer, 0, sizeof(Buffer));
-
-    FcnCode = SBN_HK_CC;
-    MsgSz   = 0; /* force an invalid size, should be skipped */
-    MSGINIT();
-    MSGINIT();
-
-    SBN_HandleCommand(&Buffer.Buf);
-
-    EVENT_CNT(0);
-} /* end HK_MsgLenErr2() */
-
 static void HK_Nominal(void)
 {
     START();
-    UT_ResetState(0);
+
 
     UT_CheckEvent_Setup(SBN_CMD_EID, "hk command");
 
@@ -571,42 +387,31 @@ static void HK_Nominal(void)
     FcnCode = SBN_HK_CC;
     MSGINIT();
 
-    SBN_HandleCommand(&Buffer.Buf);
+    SBN_SendHkCmd(&Buffer.SendHkCmd);
 
     EVENT_CNT(1);
 } /* end HK_Nominal() */
 
 static void Test_SBN_Cmds(void)
 {
-    NOOP_MsgLenErr();
     NOOP_Nominal();
-    HKNet_MsgLenErr();
     HKNet_NetIdErr();
     HKNet_Nominal();
-    HKPeer_MsgLenErr();
     HKPeer_NetIdErr();
     HKPeer_PeerIdErr();
     HKPeer_Nominal();
-    HKPeerSubs_MsgLenErr();
     HKPeerSubs_NetIdErr();
     HKPeerSubs_PeerIdErr();
     HKPeerSubs_Nominal();
-    HKMySubs_MsgLenErr();
     HKMySubs_Nominal();
-    HKReset_MsgLenErr();
     HKReset_Nominal();
-    HKResetPeer_MsgLenErr();
     HKResetPeer_NetIdErr();
     HKResetPeer_PeerIdErr();
     HKResetPeer_Nominal();
     SCH_Nominal();
-    TBL_MsgLenErr();
     TBL_Nominal();
-    HK_MsgLenErr();
-    HK_MsgLenErr2();
     HK_Nominal();
-    CC_Err();
-} /* end Test_SBN_SendNetMsg() */
+}
 
 void UT_Setup(void)
 {

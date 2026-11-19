@@ -35,6 +35,7 @@
 #include "sbn_worker.h"
 #include "sbn_inbound.h"
 #include "sbn_connection.h"
+#include "sbn_version.h"
 
 /** \brief SBN global application data, indexed by AppID. */
 SBN_AppData_t SBN_AppData;

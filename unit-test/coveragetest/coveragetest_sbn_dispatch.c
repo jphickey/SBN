@@ -1,0 +1,449 @@
+/************************************************************************
+ * NASA Docket No. GSC-19,200-1, and identified as "cFS Draco"
+ *
+ * Copyright (c) 2023 United States Government as represented by the
+ * Administrator of the National Aeronautics and Space Administration.
+ * All Rights Reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License"); you may
+ * not use this file except in compliance with the License. You may obtain
+ * a copy of the License at http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ ************************************************************************/
+
+#include "sbn_coveragetest_common.h"
+#include "sbn_dispatch.h"
+
+union
+{
+    CFE_SB_Buffer_t         Buf;
+    CFE_MSG_CommandHeader_t CommandHeader;
+
+    SBN_NoopCmd_t           NoopCmd;
+    SBN_SendHkCmd_t         SendHkCmd;
+    SBN_SendHkNetCmd_t      SendHkNetCmd;
+    SBN_SendHkPeerCmd_t     SendHkPeerCmd;
+    SBN_SendHkPeerSubsCmd_t SendHkPeerSubsCmd;
+    SBN_SendHkMySubsCmd_t   SendHkMySubsCmd;
+    SBN_ResetCmd_t          ResetCmd;
+    SBN_ResetPeerCmd_t      ResetPeerCmd;
+    SBN_WakeupCmd_t         WakeupCmd;
+    SBN_ReloadTblCmd_t      ReloadTblCmd;
+
+} Buffer;
+
+CFE_MSG_Message_t *CmdPktPtr = &Buffer.Buf.Msg;
+CFE_MSG_Size_t     MsgSz     = sizeof(CFE_MSG_CommandHeader_t);
+CFE_MSG_FcnCode_t  FcnCode   = SBN_NOOP_CC;
+
+static void UT_SBN_MsgInitHelper(void)
+{
+    CFE_SB_MsgId_t MsgId = CFE_SB_ValueToMsgId(SBN_CMD_MID);
+
+    /* Note - this sets the buffers multiple times because these accessors
+     * are called multiple times in the error paths */
+    CFE_MSG_Init(CmdPktPtr, MsgId, MsgSz);
+    UT_SetDataBuffer(UT_KEY(CFE_MSG_GetMsgId), &MsgId, sizeof(MsgId), true);
+    UT_SetDataBuffer(UT_KEY(CFE_MSG_GetMsgId), &MsgId, sizeof(MsgId), true);
+    UT_SetDataBuffer(UT_KEY(CFE_MSG_GetSize), &MsgSz, sizeof(MsgSz), false);
+    UT_SetDataBuffer(UT_KEY(CFE_MSG_GetSize), &MsgSz, sizeof(MsgSz), false);
+    UT_SetDataBuffer(UT_KEY(CFE_MSG_GetFcnCode), &FcnCode, sizeof(FcnCode), false);
+    UT_SetDataBuffer(UT_KEY(CFE_MSG_GetFcnCode), &FcnCode, sizeof(FcnCode), false);
+    UT_SetDataBuffer(UT_KEY(CFE_MSG_GetFcnCode), &FcnCode, sizeof(FcnCode), false);
+}
+
+#define MSGINIT(x) UT_SBN_MsgInitHelper()
+
+static void NOOP_MsgLenErr(void)
+{
+    START();
+
+    UT_CheckEvent_Setup(SBN_CMD_EID, "invalid message length ");
+    memset(&Buffer, 0, sizeof(Buffer));
+
+    MsgSz   = -1;
+    FcnCode = SBN_NOOP_CC;
+    MSGINIT();
+
+    SBN_HandleCommand(&Buffer.Buf);
+
+    UtAssert_STUB_COUNT(SBN_NoopCmd, 0);
+    EVENT_CNT(1);
+} /* end NOOP_MsgLenErr() */
+
+static void NOOP_Nominal(void)
+{
+    START();
+
+    memset(&Buffer, 0, sizeof(Buffer));
+
+    MsgSz   = sizeof(SBN_NoopCmd_t);
+    FcnCode = SBN_NOOP_CC;
+    MSGINIT();
+
+    SBN_HandleCommand(&Buffer.Buf);
+    UtAssert_STUB_COUNT(SBN_NoopCmd, 1);
+} /* end NOOP_Nominal() */
+
+static void HKNet_MsgLenErr(void)
+{
+    START();
+
+
+    UT_CheckEvent_Setup(SBN_CMD_EID, "invalid message length ");
+    memset(&Buffer, 0, sizeof(Buffer));
+
+    MsgSz   = -1;
+    FcnCode = SBN_HK_NET_CC;
+    MSGINIT();
+
+    SBN_HandleCommand(&Buffer.Buf);
+
+    UtAssert_STUB_COUNT(SBN_SendHkNetCmd, 0);
+    EVENT_CNT(1);
+} /* end HKNet_MsgLenErr() */
+
+static void HKNet_Nominal(void)
+{
+    START();
+
+    memset(&Buffer, 0, sizeof(Buffer));
+
+    MsgSz   = sizeof(SBN_SendHkNetCmd_t);
+    FcnCode = SBN_HK_NET_CC;
+    MSGINIT();
+
+    SBN_HandleCommand(&Buffer.Buf);
+
+    UtAssert_STUB_COUNT(SBN_SendHkNetCmd, 1);
+} /* end HKNet_Nominal() */
+
+static void HKPeer_MsgLenErr(void)
+{
+    START();
+
+
+    UT_CheckEvent_Setup(SBN_CMD_EID, "invalid message length ");
+
+    memset(&Buffer, 0, sizeof(Buffer));
+
+    MsgSz   = -1;
+    FcnCode = SBN_HK_PEER_CC;
+    MSGINIT();
+
+    SBN_HandleCommand(&Buffer.Buf);
+
+    UtAssert_STUB_COUNT(SBN_SendHkPeerCmd, 0);
+    EVENT_CNT(1);
+} /* end HKPeer_MsgLenErr() */
+
+static void HKPeer_Nominal(void)
+{
+    START();
+
+
+    memset(&Buffer, 0, sizeof(Buffer));
+
+    MsgSz   = sizeof(SBN_SendHkPeerCmd_t);
+    FcnCode = SBN_HK_PEER_CC;
+    MSGINIT();
+
+    SBN_HandleCommand(&Buffer.Buf);
+
+    UtAssert_STUB_COUNT(SBN_SendHkPeerCmd, 1);
+} /* end HKPeer_Nominal() */
+
+static void HKPeerSubs_MsgLenErr(void)
+{
+    START();
+
+    UT_CheckEvent_Setup(SBN_CMD_EID, "invalid message length ");
+
+    memset(&Buffer, 0, sizeof(Buffer));
+
+    MsgSz   = -1;
+    FcnCode = SBN_HK_PEERSUBS_CC;
+    MSGINIT();
+
+    SBN_HandleCommand(&Buffer.Buf);
+
+    UtAssert_STUB_COUNT(SBN_SendHkPeerSubsCmd, 0);
+    EVENT_CNT(1);
+} /* end HKPeerSubs_MsgLenErr() */
+
+static void HKPeerSubs_Nominal(void)
+{
+    START();
+
+    memset(&Buffer, 0, sizeof(Buffer));
+
+    PeerPtr->SubSet.SubCnt = 1;
+
+    MsgSz   = sizeof(SBN_SendHkPeerSubsCmd_t);
+    FcnCode = SBN_HK_PEERSUBS_CC;
+    MSGINIT();
+
+    SBN_HandleCommand(&Buffer.Buf);
+
+    UtAssert_STUB_COUNT(SBN_SendHkPeerSubsCmd, 1);
+} /* end HKPeerSubs_Nominal() */
+
+static void HKMySubs_MsgLenErr(void)
+{
+    START();
+
+    UT_CheckEvent_Setup(SBN_CMD_EID, "invalid message length ");
+
+    memset(&Buffer, 0, sizeof(Buffer));
+
+    MsgSz   = -1;
+    FcnCode = SBN_HK_MYSUBS_CC;
+    MSGINIT();
+
+    SBN_HandleCommand(&Buffer.Buf);
+
+    UtAssert_STUB_COUNT(SBN_SendHkMySubsCmd, 0);
+    EVENT_CNT(1);
+} /* end HKMySubs_MsgLenErr() */
+
+static void HKMySubs_Nominal(void)
+{
+    START();
+
+    memset(&Buffer, 0, sizeof(Buffer));
+
+    SBN_AppData.SubSet.SubCnt = 1;
+
+    MsgSz   = sizeof(SBN_SendHkMySubsCmd_t);
+    FcnCode = SBN_HK_MYSUBS_CC;
+    MSGINIT();
+
+    SBN_HandleCommand(&Buffer.Buf);
+
+    UtAssert_STUB_COUNT(SBN_SendHkMySubsCmd, 1);
+} /* end HKMySubs_Nominal() */
+
+static void HKReset_MsgLenErr(void)
+{
+    START();
+
+    UT_CheckEvent_Setup(SBN_CMD_EID, "invalid message length ");
+
+    memset(&Buffer, 0, sizeof(Buffer));
+
+    MsgSz   = -1;
+    FcnCode = SBN_HK_RESET_CC;
+    MSGINIT();
+
+    SBN_HandleCommand(&Buffer.Buf);
+
+    UtAssert_STUB_COUNT(SBN_ResetCmd, 0);
+    EVENT_CNT(1);
+} /* end HKReset_MsgLenErr() */
+
+static void HKReset_Nominal(void)
+{
+    START();
+
+    memset(&Buffer, 0, sizeof(Buffer));
+
+    MsgSz   = sizeof(CFE_MSG_CommandHeader_t);
+    FcnCode = SBN_HK_RESET_CC;
+    MSGINIT();
+
+    SBN_HandleCommand(&Buffer.Buf);
+
+    UtAssert_STUB_COUNT(SBN_ResetCmd, 1);
+} /* end HKReset_Nominal() */
+
+static void HKResetPeer_MsgLenErr(void)
+{
+    START();
+
+    UT_CheckEvent_Setup(SBN_CMD_EID, "invalid message length (Name=");
+
+    memset(&Buffer, 0, sizeof(Buffer));
+
+    MsgSz   = -1;
+    FcnCode = SBN_HK_RESET_PEER_CC;
+    MSGINIT();
+
+    SBN_HandleCommand(&Buffer.Buf);
+
+    UtAssert_STUB_COUNT(SBN_ResetPeerCmd, 0);
+    EVENT_CNT(1);
+} /* end HKResetPeer_MsgLenErr() */
+
+static void HKResetPeer_Nominal(void)
+{
+    START();
+
+    memset(&Buffer, 0, sizeof(Buffer));
+
+    MsgSz   = sizeof(SBN_ResetPeerCmd_t);
+    FcnCode = SBN_HK_RESET_PEER_CC;
+    MSGINIT();
+
+    SBN_HandleCommand(&Buffer.Buf);
+
+    UtAssert_STUB_COUNT(SBN_ResetPeerCmd, 1);
+} /* end HKResetPeer_Nominal() */
+
+static void SCH_Nominal(void)
+{
+    START();
+
+    memset(&Buffer, 0, sizeof(Buffer));
+
+    MsgSz   = sizeof(SBN_WakeupCmd_t);
+    FcnCode = SBN_SCH_WAKEUP_CC;
+    MSGINIT();
+
+    SBN_HandleCommand(&Buffer.Buf);
+
+    UtAssert_STUB_COUNT(SBN_WakeupCmd, 1);
+} /* end SCH_Nominal() */
+
+static void TBL_MsgLenErr(void)
+{
+    START();
+
+    UT_CheckEvent_Setup(SBN_CMD_EID, "invalid message length ");
+
+    memset(&Buffer, 0, sizeof(Buffer));
+
+    MsgSz   = -1;
+    FcnCode = SBN_TBL_CC;
+    MSGINIT();
+
+    SBN_HandleCommand(&Buffer.Buf);
+
+    UtAssert_STUB_COUNT(SBN_ReloadTblCmd, 0);
+    EVENT_CNT(1);
+} /* end TBL_MsgLenErr() */
+
+static void TBL_Nominal(void)
+{
+    START();
+
+    memset(&Buffer, 0, sizeof(Buffer));
+
+    MsgSz   = sizeof(SBN_ReloadTblCmd_t);
+    FcnCode = SBN_TBL_CC;
+    MSGINIT();
+
+    SBN_HandleCommand(&Buffer.Buf);
+
+    UtAssert_STUB_COUNT(SBN_ReloadTblCmd, 1);
+} /* end TBL_Nominal() */
+
+static void CC_Err(void)
+{
+    START();
+
+    UT_CheckEvent_Setup(SBN_CMD_EID, "invalid command code (ID=0x");
+
+    memset(&Buffer, 0, sizeof(Buffer));
+
+    MsgSz   = sizeof(CFE_MSG_CommandHeader_t);
+    FcnCode = SBN_TBL_CC + 10;
+    MSGINIT();
+
+    SBN_HandleCommand(&Buffer.Buf);
+
+    EVENT_CNT(1);
+} /* end CC_Err() */
+
+static void HK_MsgLenErr(void)
+{
+    START();
+
+
+    UT_CheckEvent_Setup(SBN_CMD_EID,"invalid hk message length");
+    memset(&Buffer, 0, sizeof(Buffer));
+
+    MsgSz   = -1;
+    FcnCode = SBN_HK_CC;
+    MSGINIT();
+
+    SBN_HandleCommand(&Buffer.Buf);
+
+    UtAssert_STUB_COUNT(SBN_SendHkCmd, 0);
+    EVENT_CNT(1);
+} /* end HK_MsgLenErr() */
+
+static void HK_MsgLenErr2(void)
+{
+    START();
+
+    UT_CheckEvent_Setup(SBN_CMD_EID,"invalid hk message length");
+    memset(&Buffer, 0, sizeof(Buffer));
+
+    FcnCode = SBN_HK_CC;
+    MsgSz   = 0; /* force an invalid size, should be skipped */
+    MSGINIT();
+
+    SBN_HandleCommand(&Buffer.Buf);
+
+    UtAssert_STUB_COUNT(SBN_SendHkCmd, 0);
+    EVENT_CNT(1);
+} /* end HK_MsgLenErr2() */
+
+static void HK_Nominal(void)
+{
+    START();
+
+    memset(&Buffer, 0, sizeof(Buffer));
+
+    MsgSz   = sizeof(CFE_MSG_CommandHeader_t);
+    FcnCode = SBN_HK_CC;
+    MSGINIT();
+
+    SBN_HandleCommand(&Buffer.Buf);
+
+    UtAssert_STUB_COUNT(SBN_SendHkCmd, 1);
+} /* end HK_Nominal() */
+
+
+static void Test_SBN_Cmds(void)
+{
+    NOOP_MsgLenErr();
+    NOOP_Nominal();
+    HKNet_MsgLenErr();
+    HKNet_Nominal();
+    HKPeer_MsgLenErr();
+    HKPeer_Nominal();
+    HKPeerSubs_MsgLenErr();
+    HKPeerSubs_Nominal();
+    HKMySubs_MsgLenErr();
+    HKMySubs_Nominal();
+    HKReset_MsgLenErr();
+    HKReset_Nominal();
+    HKResetPeer_MsgLenErr();
+    HKResetPeer_Nominal();
+    SCH_Nominal();
+    TBL_MsgLenErr();
+    TBL_Nominal();
+    HK_MsgLenErr();
+    HK_MsgLenErr2();
+    HK_Nominal();
+    CC_Err();
+} /* end Test_SBN_SendNetMsg() */
+
+void UT_Setup(void)
+{
+} /* end UT_Setup() */
+
+void UT_TearDown(void)
+{
+} /* end UT_TearDown() */
+
+void UtTest_Setup(void)
+{
+    ADD_TEST(SBN_Cmds);
+}

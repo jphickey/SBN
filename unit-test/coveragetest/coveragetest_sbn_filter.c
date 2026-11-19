@@ -1,0 +1,89 @@
+/************************************************************************
+ * NASA Docket No. GSC-19,200-1, and identified as "cFS Draco"
+ *
+ * Copyright (c) 2023 United States Government as represented by the
+ * Administrator of the National Aeronautics and Space Administration.
+ * All Rights Reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License"); you may
+ * not use this file except in compliance with the License. You may obtain
+ * a copy of the License at http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ ************************************************************************/
+
+#include "sbn_coveragetest_common.h"
+#include "sbn_filter.h"
+#include "sbn_error.h"
+
+void Test_SBN_Filter_Gatekeeper(void)
+{
+    /* Test Case For:
+     * SBN_Status_t SBN_Filter_Gatekeeper(const CFE_MSG_Message_t *MsgPtr, SBN_PeerInterface_t *Peer, SBN_Filter_Direction_Enum_t Dir);
+     */
+
+    CFE_MSG_Message_t Msg;
+    SBN_PeerInterface_t *Peer = &SBN_AppData.PeerRecords[0].Intf;
+
+    memset(&Msg, 0, sizeof(Msg));
+
+    UtAssert_INT32_EQ(SBN_Filter_Gatekeeper(&Msg, Peer, SBN_Filter_Direction_INVALID), SBN_SUCCESS);
+    UtAssert_INT32_EQ(SBN_Filter_Gatekeeper(&Msg, Peer, SBN_Filter_Direction_OUTBOUND), SBN_SUCCESS);
+    UtAssert_INT32_EQ(SBN_Filter_Gatekeeper(&Msg, Peer, SBN_Filter_Direction_INBOUND), SBN_SUCCESS);
+}
+
+void Test_SBN_Filter_Mutation(void)
+{
+    /* Test Case For:
+     * SBN_Status_t SBN_Filter_Mutation(SBN_BufferDesc_t *BufD, SBN_PeerInterface_t *Peer, SBN_Filter_Direction_Enum_t Dir);
+     */
+    SBN_BufferDesc_t BufD;
+    CFE_MSG_Message_t Msg;
+    SBN_PeerInterface_t *Peer = &SBN_AppData.PeerRecords[0].Intf;
+
+    memset(&BufD, 0, sizeof(BufD));
+    memset(&Msg, 0, sizeof(Msg));
+
+    BufD.ActualDataSz = sizeof(Msg);
+    BufD.MaxDataSz = sizeof(Msg);
+    BufD.DataPtr = &Msg;
+    BufD.MsgType = SBN_APP_MSG;
+
+    UtAssert_INT32_EQ(SBN_Filter_Mutation(&BufD, Peer, SBN_Filter_Direction_INVALID), SBN_SUCCESS);
+    UtAssert_INT32_EQ(SBN_Filter_Mutation(&BufD, Peer, SBN_Filter_Direction_INBOUND), SBN_SUCCESS);
+    UtAssert_INT32_EQ(SBN_Filter_Mutation(&BufD, Peer, SBN_Filter_Direction_OUTBOUND), SBN_SUCCESS);
+}
+
+void Test_SBN_Filter_Remap(void)
+{
+    /* Test Case For:
+     * SBN_Status_t SBN_Filter_Remap(CFE_SB_MsgId_t *MsgIdPtr, SBN_PeerInterface_t *Peer);
+     */
+    CFE_SB_MsgId_t MsgId;
+    SBN_PeerInterface_t *Peer = &SBN_AppData.PeerRecords[0].Intf;
+
+    MsgId = CFE_SB_ValueToMsgId(0xAAAA);
+
+    UtAssert_INT32_EQ(SBN_Filter_Remap(&MsgId, Peer), SBN_SUCCESS);
+}
+
+
+
+void UT_Setup(void)
+{
+} /* end UT_Setup() */
+
+void UT_TearDown(void)
+{
+} /* end UT_TearDown() */
+
+void UtTest_Setup(void)
+{
+    ADD_TEST(SBN_Filter_Gatekeeper);
+    ADD_TEST(SBN_Filter_Mutation);
+    ADD_TEST(SBN_Filter_Remap);
+}

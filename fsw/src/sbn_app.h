@@ -16,15 +16,13 @@
  * limitations under the License.
  ************************************************************************/
 
-#ifndef _sbn_app_
-#define _sbn_app_
+#ifndef SBN_APP_H
+#define SBN_APP_H
 
 #include <string.h>
-#include <errno.h>
 
 #include "osconfig.h"
 #include "cfe.h"
-#include "sbn_version.h"
 #include "sbn_interfaces.h"
 #include "sbn_msg.h"
 #include "sbn_platform_cfg.h"

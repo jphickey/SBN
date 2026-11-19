@@ -20,6 +20,8 @@
 #include "cfe_msgids.h"
 #include "sbn_pack.h"
 #include "sbn_error.h"
+#include "sbn_outbound.h"
+#include "sbn_filter.h"
 
 CFE_SB_MsgId_t MsgID = { .Value = 0xDEAD };
 
@@ -73,6 +75,7 @@ static void SLS2P_SendNetMsgErr(void)
     BufD.MaxDataSz = sizeof(Buf);
     BufD.DataPtr   = Buf;
 
+    UT_SetDefaultReturnValue(UT_KEY(SBN_Outbound_SendToPeer), SBN_ERROR);
     UtAssert_INT32_EQ(SBN_Subs_SendLocalToPeer(PeerRec, &BufD), SBN_ERROR);
 
     IfOpsPtr->Send = Send_Nominal;
@@ -302,22 +305,11 @@ void Test_SBN_Subs_PollCycle(void)
     CSP_NoMsg();
 } /* end Test_SBN_Subs_PollCycle() */
 
-static SBN_Status_t RemapMID_Err(CFE_SB_MsgId_t *FromToMidPtr, SBN_Filter_Ctx_t *Context)
-{
-    return SBN_ERROR;
-} /* end RemapMID_Err() */
-
 static void PSFP_PFP_FiltErr(void)
 {
     START();
 
     PeerPtr->FilterCnt = 2;
-    SBN_FilterInterface_t Filter1, Filter2;
-    memset(&Filter1, 0, sizeof(Filter1));
-    memset(&Filter2, 0, sizeof(Filter2));
-    Filter2.RemapMID    = RemapMID_Err;
-    PeerPtr->Filters[0] = &Filter1;
-    PeerPtr->Filters[1] = &Filter2;
 
     uint8            Buf[CFE_MISSION_SB_MAX_SB_MSG_SIZE];
     SBN_PackState_t  Pack;
@@ -336,6 +328,8 @@ static void PSFP_PFP_FiltErr(void)
     BufD.MaxDataSz    = sizeof(Buf);
     BufD.DataPtr      = Buf;
     BufD.ActualDataSz = SBN_Pack_GetPosition(&Pack);
+
+    UT_SetDeferredRetcode(UT_KEY(SBN_Filter_Remap), 1, -1);
 
     UtAssert_INT32_EQ(SBN_Subs_ProcessMsgFromPeer(PeerRec, &BufD), SBN_SUCCESS);
 
@@ -446,12 +440,6 @@ static void PUSFP_PUFP_FiltErr(void)
     PeerPtr->SubSet.SubCnt        = 1;
     PeerPtr->SubSet.Subs[0].MsgID = MsgID;
     PeerPtr->FilterCnt            = 2;
-    SBN_FilterInterface_t Filter1, Filter2;
-    memset(&Filter1, 0, sizeof(Filter1));
-    memset(&Filter2, 0, sizeof(Filter2));
-    Filter2.RemapMID    = RemapMID_Err;
-    PeerPtr->Filters[0] = &Filter1;
-    PeerPtr->Filters[1] = &Filter2;
 
     uint8            Buf[CFE_MISSION_SB_MAX_SB_MSG_SIZE];
     SBN_PackState_t  Pack;
@@ -470,6 +458,8 @@ static void PUSFP_PUFP_FiltErr(void)
     BufD.MaxDataSz    = sizeof(Buf);
     BufD.DataPtr      = Buf;
     BufD.ActualDataSz = SBN_Pack_GetPosition(&Pack);
+
+    UT_SetDeferredRetcode(UT_KEY(SBN_Filter_Remap), 1, -1);
 
     UtAssert_INT32_EQ(SBN_Subs_ProcessMsgFromPeer(PeerRec, &BufD), SBN_SUCCESS);
 
