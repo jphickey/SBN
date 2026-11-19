@@ -25,6 +25,9 @@
 #include "sbn_resource.h"
 #include "utgenstub.h"
 
+void UT_DefaultHandler_SBN_ForEachConfiguredNet(void *, UT_EntryKey_t, const UT_StubContext_t *);
+void UT_DefaultHandler_SBN_ForEachConfiguredPeer(void *, UT_EntryKey_t, const UT_StubContext_t *);
+
 /*
  * ----------------------------------------------------
  * Generated stub function for SBN_CheckNetIdSlotUsed()
@@ -69,7 +72,7 @@ SBN_Status_t SBN_ForEachConfiguredNet(SBN_NetFunc_t Func, void *Arg)
     UT_GenStub_AddParam(SBN_ForEachConfiguredNet, SBN_NetFunc_t, Func);
     UT_GenStub_AddParam(SBN_ForEachConfiguredNet, void *, Arg);
 
-    UT_GenStub_Execute(SBN_ForEachConfiguredNet, Basic, NULL);
+    UT_GenStub_Execute(SBN_ForEachConfiguredNet, Basic, UT_DefaultHandler_SBN_ForEachConfiguredNet);
 
     return UT_GenStub_GetReturnValue(SBN_ForEachConfiguredNet, SBN_Status_t);
 }
@@ -86,7 +89,7 @@ SBN_Status_t SBN_ForEachConfiguredPeer(SBN_PeerFunc_t Func, void *Arg)
     UT_GenStub_AddParam(SBN_ForEachConfiguredPeer, SBN_PeerFunc_t, Func);
     UT_GenStub_AddParam(SBN_ForEachConfiguredPeer, void *, Arg);
 
-    UT_GenStub_Execute(SBN_ForEachConfiguredPeer, Basic, NULL);
+    UT_GenStub_Execute(SBN_ForEachConfiguredPeer, Basic, UT_DefaultHandler_SBN_ForEachConfiguredPeer);
 
     return UT_GenStub_GetReturnValue(SBN_ForEachConfiguredPeer, SBN_Status_t);
 }

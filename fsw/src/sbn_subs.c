@@ -54,7 +54,7 @@ SBN_SubChange_t *SBN_Subs_GetPrevChangeEntry(SBN_SubJournal_t *Journal, uint32 V
     uint32           Age;
     SBN_SubChange_t *Entry;
 
-    Age = Journal->CurrVersion - Version;
+    Age = Journal->CurrVersion - Version - 1;
     if (Age > (SBN_PLATFORM_SUBSCRIPTION_UPDATE_QUEUE_DEPTH - 2))
     {
         /* too old! */
@@ -821,7 +821,6 @@ void SBN_Subs_UpdateConnectedPeerRemoteSubs(SBN_PeerRecord_t *PeerRec, SBN_Buffe
 void SBN_Subs_UpdateConnectedPeerLocalSubs(SBN_PeerRecord_t *PeerRec)
 {
     SBN_Status_t SBN_Status;
-    uint32       LastVersion;
 
     /* Make sure we have a valid local pipe ID */
     if (CFE_RESOURCEID_TEST_DEFINED(PeerRec->Intf.Pipe))
@@ -836,17 +835,8 @@ void SBN_Subs_UpdateConnectedPeerLocalSubs(SBN_PeerRecord_t *PeerRec)
 
     while (SBN_Status == SBN_SUCCESS && PeerRec->Priv.LocalPipeCurrSubVersion != PeerRec->Priv.SubQ.CurrVersion)
     {
-        LastVersion = PeerRec->Priv.LocalPipeCurrSubVersion;
-
         /* try to apply an incremental update to our local pipe */
         SBN_Status = SBN_Subs_IncrementLocalPipeSubVersion(PeerRec);
-
-        /* Note - if either of the above functions worked, it should have updated PeerSentSubVersion */
-        if (PeerRec->Priv.LocalPipeCurrSubVersion == LastVersion)
-        {
-            /* no update was possible, something is broken, do not try endlessly */
-            break;
-        }
     }
 }
 

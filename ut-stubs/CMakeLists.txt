@@ -30,6 +30,7 @@ add_library(ut_sbn_stubs STATIC
     sbn_outbound_stubs.c
     sbn_pack_handlers.c
     sbn_pack_stubs.c
+    sbn_resource_handlers.c
     sbn_resource_stubs.c
     sbn_subs_stubs.c
     sbn_worker_stubs.c

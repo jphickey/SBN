@@ -590,6 +590,190 @@ void Test_SBN_Subs_UpdateDisconnectedPeerLocalSubs(void)
     UDPLS_Nominal();
 } /* end Test_SBN_Subs_UpdateDisconnectedPeerLocalSubs() */
 
+void Test_SBN_Subs_GetPrevChangeEntry(void)
+{
+    START();
+
+    /* Test Case For:
+     * SBN_SubChange_t *SBN_Subs_GetPrevChangeEntry(SBN_SubJournal_t *Journal, uint32 Version);
+     */
+    uint32 Idx;
+    SBN_SubJournal_t SubJournal;
+
+    memset(&SubJournal, 0, sizeof(SubJournal));
+    SubJournal.CurrVersion = 1;
+
+    UtAssert_ADDRESS_EQ(SBN_Subs_GetPrevChangeEntry(&SubJournal, 0), &SubJournal.Entries[0]);
+    UtAssert_NULL(SBN_Subs_GetPrevChangeEntry(&SubJournal, 1));
+
+    SubJournal.CurrVersion = 10000;
+    Idx = SubJournal.CurrVersion % SBN_PLATFORM_SUBSCRIPTION_UPDATE_QUEUE_DEPTH;
+    SubJournal.CurrVersion += SBN_PLATFORM_SUBSCRIPTION_UPDATE_QUEUE_DEPTH - 4;
+
+    UtAssert_ADDRESS_EQ(SBN_Subs_GetPrevChangeEntry(&SubJournal, 10000), &SubJournal.Entries[Idx]);
+    SubJournal.CurrVersion += 5;
+    UtAssert_NULL(SBN_Subs_GetPrevChangeEntry(&SubJournal, 10000));
+}
+
+void Test_SBN_Subs_SetupLocalPipe(void)
+{
+    START();
+
+    /* Test Case For:
+     * SBN_Status_t SBN_Subs_SetupLocalPipe(SBN_PeerRecord_t *PeerRec);
+     */
+    SBN_PeerRecord_t *PeerRec = &SBN_AppData.PeerRecords[0];
+    CFE_SB_PipeId_t UtPipeId2 = CFE_SB_PIPEID_C(CFE_ResourceId_FromInteger(2));
+    CFE_SB_PipeId_t UtPipeId3 = CFE_SB_PIPEID_C(CFE_ResourceId_FromInteger(2));
+
+    UT_SetDataBuffer(UT_KEY(CFE_SB_CreatePipe), &UtPipeId2, sizeof(UtPipeId2), false);
+    UtAssert_INT32_EQ(SBN_Subs_SetupLocalPipe(PeerRec), SBN_SUCCESS);
+    UtAssert_STUB_COUNT(CFE_SB_CreatePipe, 1);
+    UtAssert_STUB_COUNT(CFE_SB_DeletePipe, 0);
+    UtAssert_STUB_COUNT(CFE_SB_SetPipeOpts, 1);
+    UtAssert_STUB_COUNT(CFE_SB_SubscribeLocal, 0);
+
+    UtAssert_BOOL_TRUE(CFE_RESOURCEID_TEST_EQUAL(UtPipeId2, PeerRec->Intf.Pipe));
+
+    /* Pipe already exists, with subscriptions */
+    UT_SetDataBuffer(UT_KEY(CFE_SB_CreatePipe), &UtPipeId3, sizeof(UtPipeId3), false);
+    PeerRec->Intf.SubSet.SubCnt = 2;
+    UtAssert_INT32_EQ(SBN_Subs_SetupLocalPipe(PeerRec), SBN_SUCCESS);
+    UtAssert_STUB_COUNT(CFE_SB_DeletePipe, 1);
+    UtAssert_STUB_COUNT(CFE_SB_CreatePipe, 2);
+    UtAssert_STUB_COUNT(CFE_SB_SubscribeLocal, 2);
+
+    UtAssert_BOOL_TRUE(CFE_RESOURCEID_TEST_EQUAL(UtPipeId3, PeerRec->Intf.Pipe));
+
+    /* Pipe fails to create */
+    UT_SetDeferredRetcode(UT_KEY(CFE_SB_CreatePipe), 1, -1);
+    UT_CheckEvent_Setup(SBN_PEER_EID, "CFE_SB_CreatePipe() failed");
+    UtAssert_INT32_EQ(SBN_Subs_SetupLocalPipe(PeerRec), SBN_ERROR);
+    UtAssert_BOOL_FALSE(CFE_RESOURCEID_TEST_DEFINED(PeerRec->Intf.Pipe));
+    UtAssert_STUB_COUNT(CFE_SB_DeletePipe, 2);
+    EVENT_CNT(1);
+
+    /* Pipe fails to set options */
+    UT_SetDataBuffer(UT_KEY(CFE_SB_CreatePipe), &UtPipeId2, sizeof(UtPipeId2), false);
+    UT_SetDeferredRetcode(UT_KEY(CFE_SB_SetPipeOpts), 1, -1);
+    UT_CheckEvent_Setup(SBN_PEER_EID, "CFE_SB_SetPipeOpts() failed");
+    UtAssert_INT32_EQ(SBN_Subs_SetupLocalPipe(PeerRec), SBN_ERROR);
+    UtAssert_BOOL_FALSE(CFE_RESOURCEID_TEST_DEFINED(PeerRec->Intf.Pipe));
+    UtAssert_STUB_COUNT(CFE_SB_DeletePipe, 3);
+    EVENT_CNT(1);
+
+}
+
+void Test_SBN_Subs_UpdateConnectedPeerRemoteSubs(void)
+{
+    START();
+
+    /* Test Case For:
+     * void SBN_Subs_UpdateConnectedPeerRemoteSubs(SBN_PeerRecord_t *PeerRec, SBN_BufferDesc_t *BufD);
+     */
+    SBN_PeerRecord_t *PeerRec = &SBN_AppData.PeerRecords[0];
+    SBN_BufferDesc_t BufD;
+
+    memset(&BufD, 0, sizeof(BufD));
+
+    /* Nominal, does nothing */
+    UtAssert_VOIDCALL(SBN_Subs_UpdateConnectedPeerRemoteSubs(PeerRec, &BufD));
+    UtAssert_UINT32_EQ(PeerRec->Priv.PeerSentSubVersion, SBN_AppData.SubQ.CurrVersion);
+
+    /* Add sub to sync */
+    SBN_AppData.SubQ.Entries[SBN_AppData.SubQ.CurrVersion] = (SBN_SubChange_t) { .IsSubscribe = true, .MsgId = CFE_SB_MSGID_WRAP_VALUE(0x5678) };
+    ++SBN_AppData.SubQ.CurrVersion;
+    UtAssert_VOIDCALL(SBN_Subs_UpdateConnectedPeerRemoteSubs(PeerRec, &BufD));
+    UtAssert_UINT32_EQ(PeerRec->Priv.PeerSentSubVersion, SBN_AppData.SubQ.CurrVersion);
+
+    /* Remove sub to sync */
+    SBN_AppData.SubQ.Entries[SBN_AppData.SubQ.CurrVersion] = (SBN_SubChange_t) { .IsSubscribe = false, .MsgId = CFE_SB_MSGID_WRAP_VALUE(0x5678) };
+    ++SBN_AppData.SubQ.CurrVersion;
+    UtAssert_VOIDCALL(SBN_Subs_UpdateConnectedPeerRemoteSubs(PeerRec, &BufD));
+    UtAssert_UINT32_EQ(PeerRec->Priv.PeerSentSubVersion, SBN_AppData.SubQ.CurrVersion);
+
+    /* Make things out of sync */
+    SBN_AppData.SubQ.CurrVersion += SBN_PLATFORM_SUBSCRIPTION_UPDATE_QUEUE_DEPTH * 2;
+    UtAssert_VOIDCALL(SBN_Subs_UpdateConnectedPeerRemoteSubs(PeerRec, &BufD));
+
+    /* Make it fail to send to the remote */
+    /* in this case the local version should NOT increment, it should try again */
+    UT_ResetState(UT_KEY(SBN_Outbound_SendToPeer));
+    UT_SetDeferredRetcode(UT_KEY(SBN_Outbound_SendToPeer), 1, -1);
+    SBN_AppData.SubQ.Entries[SBN_AppData.SubQ.CurrVersion] = (SBN_SubChange_t) { .IsSubscribe = true, .MsgId = CFE_SB_MSGID_WRAP_VALUE(0x5678) };
+    ++SBN_AppData.SubQ.CurrVersion;
+    UtAssert_VOIDCALL(SBN_Subs_UpdateConnectedPeerRemoteSubs(PeerRec, &BufD));
+    UtAssert_UINT32_EQ(PeerRec->Priv.PeerSentSubVersion, SBN_AppData.SubQ.CurrVersion - 1);
+    UtAssert_STUB_COUNT(SBN_Outbound_SendToPeer, 1);
+
+    /* Next cycle, this type SBN_Outbound_SendToPeer does not fail */
+    UtAssert_VOIDCALL(SBN_Subs_UpdateConnectedPeerRemoteSubs(PeerRec, &BufD));
+    UtAssert_UINT32_EQ(PeerRec->Priv.PeerSentSubVersion, SBN_AppData.SubQ.CurrVersion);
+    UtAssert_STUB_COUNT(SBN_Outbound_SendToPeer, 2);
+
+}
+
+void Test_SBN_Subs_UpdateConnectedPeerLocalSubs(void)
+{
+    START();
+
+    /* Test Case For:
+     * void SBN_Subs_UpdateConnectedPeerLocalSubs(SBN_PeerRecord_t *PeerRec);
+     */
+    SBN_PeerRecord_t *PeerRec = &SBN_AppData.PeerRecords[0];
+
+    UtAssert_VOIDCALL(SBN_Subs_UpdateConnectedPeerLocalSubs(PeerRec));
+}
+
+void Test_SBN_Subs_SynchronizeAllPeers(void)
+{
+    START();
+
+    /* Test Case For:
+     * void SBN_Subs_SynchronizeAllPeers(void);
+     */
+    SBN_PeerRecord_t *PeerRec = &SBN_AppData.PeerRecords[0];
+
+    /* Nominal, disconnected */
+    PeerRec->Intf.Connected = false;
+    UtAssert_VOIDCALL(SBN_Subs_SynchronizeAllPeers());
+
+    /* Nominal, connected, but nothing to sync */
+    PeerRec->Intf.Connected = true;
+    UtAssert_VOIDCALL(SBN_Subs_SynchronizeAllPeers());
+    UtAssert_STUB_COUNT(CFE_SB_CreatePipe, 1);
+
+    /* Add something to subscribe with preexisting pipe */
+    PeerRec->Intf.Pipe = CFE_SB_PIPEID_C(CFE_ResourceId_FromInteger(1));
+    PeerRec->Priv.SubQ.Entries[PeerRec->Priv.SubQ.CurrVersion] = (SBN_SubChange_t) { .IsSubscribe = true, .MsgId = CFE_SB_MSGID_WRAP_VALUE(0x1234) };
+    ++PeerRec->Priv.SubQ.CurrVersion;
+
+    UtAssert_VOIDCALL(SBN_Subs_SynchronizeAllPeers());
+
+    UtAssert_STUB_COUNT(CFE_SB_CreatePipe, 1);
+    UtAssert_STUB_COUNT(CFE_SB_SubscribeLocal, 1);
+    UtAssert_UINT32_EQ(PeerRec->Intf.SubSet.SubCnt, 1);
+    UtAssert_UINT32_EQ(CFE_SB_MsgIdToValue(PeerRec->Intf.SubSet.Subs[0].MsgID), 0x1234);
+    UtAssert_UINT32_EQ(PeerRec->Priv.SubQ.CurrVersion, PeerRec->Priv.LocalPipeCurrSubVersion);
+
+    /* Add something to unsubscribe */
+    PeerRec->Priv.SubQ.Entries[PeerRec->Priv.SubQ.CurrVersion] = (SBN_SubChange_t) { .IsSubscribe = false, .MsgId = CFE_SB_MSGID_WRAP_VALUE(0x1234) };
+    ++PeerRec->Priv.SubQ.CurrVersion;
+
+    UtAssert_VOIDCALL(SBN_Subs_SynchronizeAllPeers());
+
+    UtAssert_STUB_COUNT(CFE_SB_UnsubscribeLocal, 1);
+    UtAssert_UINT32_EQ(PeerRec->Intf.SubSet.SubCnt, 0);
+    UtAssert_UINT32_EQ(PeerRec->Priv.SubQ.CurrVersion, PeerRec->Priv.LocalPipeCurrSubVersion);
+
+
+    /* Make things out of sync */
+    PeerRec->Priv.SubQ.CurrVersion += SBN_PLATFORM_SUBSCRIPTION_UPDATE_QUEUE_DEPTH * 2;
+    UtAssert_VOIDCALL(SBN_Subs_SynchronizeAllPeers());
+
+}
+
+
 void UT_Setup(void)
 {
 } /* end UT_Setup() */
@@ -606,4 +790,9 @@ void UtTest_Setup(void)
     ADD_TEST(SBN_ProcessSubsFromPeer);
     ADD_TEST(SBN_ProcessUnsubsFromPeer);
     ADD_TEST(SBN_Subs_UpdateDisconnectedPeerLocalSubs);
+    ADD_TEST(SBN_Subs_GetPrevChangeEntry);
+    ADD_TEST(SBN_Subs_SetupLocalPipe);
+    ADD_TEST(SBN_Subs_UpdateConnectedPeerRemoteSubs);
+    ADD_TEST(SBN_Subs_UpdateConnectedPeerLocalSubs);
+    ADD_TEST(SBN_Subs_SynchronizeAllPeers    );
 }

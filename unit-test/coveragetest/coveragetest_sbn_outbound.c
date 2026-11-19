@@ -17,6 +17,90 @@
  ************************************************************************/
 
 #include "sbn_coveragetest_common.h"
+#include "sbn_outbound.h"
+#include "sbn_error.h"
+
+void Test_SBN_Outbound_SendToPeer(void)
+{
+    START();
+
+    /* Test Case For:
+     * SBN_Status_t SBN_Outbound_SendToPeer(SBN_BufferDesc_t *BufD, SBN_PeerInterface_t *Peer);
+     */
+    SBN_PeerInterface_t *Peer = &SBN_AppData.PeerRecords[0].Intf;
+    SBN_BufferDesc_t BufD;
+
+    memset(&BufD, 0, sizeof(BufD));
+
+    UtAssert_VOIDCALL(SBN_Outbound_SendToPeer(&BufD, Peer));
+}
+
+void Test_SBN_Outbound_GetMsg(void)
+{
+    START();
+
+    /* Test Case For:
+     * SBN_Status_t SBN_Outbound_GetMsg(SBN_BufferDesc_t *BufD, CFE_SB_PipeId_t PeerPipe, int32 Timeout);
+     */
+    SBN_BufferDesc_t BufD;
+    CFE_SB_PipeId_t PeerPipe = CFE_SB_PIPEID_C(CFE_ResourceId_FromInteger(1));
+    CFE_SB_Buffer_t SbBuf;
+    CFE_MSG_Message_t Msg;
+    CFE_SB_Buffer_t *BufPtr;
+    CFE_MSG_Size_t MsgSz;
+
+    memset(&BufD, 0, sizeof(BufD));
+    memset(&SbBuf, 0, sizeof(SbBuf));
+    memset(&Msg, 0xA5, sizeof(Msg));
+    BufPtr = &SbBuf;
+    MsgSz = sizeof(SbBuf.Msg);
+
+    BufD.MaxDataSz = sizeof(Msg);
+    BufD.DataPtr = &Msg;
+
+    UT_SetDataBuffer(UT_KEY(CFE_SB_ReceiveBuffer), &BufPtr, sizeof(BufPtr), false);
+    UT_SetDataBuffer(UT_KEY(CFE_MSG_GetSize), &MsgSz, sizeof(MsgSz), false);
+
+    UtAssert_INT32_EQ(SBN_Outbound_GetMsg(&BufD, PeerPipe, 100), SBN_SUCCESS);
+}
+
+void Test_SBN_Outbound_IsScheduled(void)
+{
+    START();
+
+    /* Test Case For:
+     * bool SBN_Outbound_IsScheduled(SBN_PeerRecord_t *PeerRec);
+     */
+    SBN_PeerRecord_t *PeerRec = &SBN_AppData.PeerRecords[0];
+
+    UtAssert_BOOL_FALSE(SBN_Outbound_IsScheduled(PeerRec));
+}
+
+void Test_SBN_Outbound_ServicePeer(void)
+{
+    START();
+
+    /* Test Case For:
+     * void SBN_Outbound_ServicePeer(SBN_PeerRecord_t *PeerRec, SBN_BufferDesc_t *BufD);
+     */
+    SBN_PeerRecord_t *PeerRec = &SBN_AppData.PeerRecords[0];
+    SBN_BufferDesc_t BufD;
+
+    memset(&BufD, 0, sizeof(BufD));
+
+    UtAssert_VOIDCALL(SBN_Outbound_ServicePeer(PeerRec, &BufD));
+}
+
+void Test_SBN_Outbound_PollCycle(void)
+{
+    START();
+
+    /* Test Case For:
+     * void SBN_Outbound_PollCycle(void);
+     */
+    UtAssert_VOIDCALL(SBN_Outbound_PollCycle());
+}
+
 
 void UT_Setup(void)
 {
@@ -28,4 +112,9 @@ void UT_TearDown(void)
 
 void UtTest_Setup(void)
 {
+    ADD_TEST(SBN_Outbound_SendToPeer);
+    ADD_TEST(SBN_Outbound_GetMsg);
+    ADD_TEST(SBN_Outbound_IsScheduled);
+    ADD_TEST(SBN_Outbound_ServicePeer);
+    ADD_TEST(SBN_Outbound_PollCycle);
 }

@@ -21,8 +21,10 @@
 #include "sbn_inbound.h"
 #include "sbn_error.h"
 #include "sbn_filter.h"
+#include "sbn_worker.h"
+#include "sbn_connection.h"
 
-static void ProcessPeerMsg_AppMsg_FiltErr(void)
+static void Test_SBN_Inbound_ProcessMsg_AppMsg_FiltErr(void)
 {
     START();
 
@@ -31,7 +33,6 @@ static void ProcessPeerMsg_AppMsg_FiltErr(void)
      * - FilterCnt: 1 - Single filter to test error condition
      * - Filters[0]: Filter with RecvFilter_Err (returns SBN_ERROR) - Triggers filter error during message processing
      * - ProcessorID/SpacecraftID: Set to match the message being processed to ensure peer lookup succeeds */
-    UT_ResetState(0);
     SBN_BufferDesc_t      BufD;
 
     memset(&BufD, 0, sizeof(BufD));
@@ -47,7 +48,7 @@ static void ProcessPeerMsg_AppMsg_FiltErr(void)
     UtAssert_INT32_EQ(SBN_Inbound_ProcessMsg(&BufD, PeerRec), SBN_ERROR);
 } /* end ProcessPeerMsg_AppMsg_FiltErr() */
 
-static void ProcessPeerMsg_AppMsg_FiltOut(void)
+static void Test_SBN_Inbound_ProcessMsg_AppMsg_FiltOut(void)
 {
     START();
 
@@ -57,7 +58,6 @@ static void ProcessPeerMsg_AppMsg_FiltOut(void)
      * - Filters[0]: Filter with RecvFilter_Out (returns SBN_IF_EMPTY) - Filters out the message
      * - PeerPtr->ProcessorID/SpacecraftID: Set to match message parameters to ensure peer lookup succeeds
      * - ProcessorID/SpacecraftID: Set to match the message being processed */
-    UT_ResetState(0);
     SBN_BufferDesc_t      BufD;
 
     memset(&BufD, 0, sizeof(BufD));
@@ -80,7 +80,7 @@ static SBN_Status_t RecvFilter_Nominal(void *Data, SBN_Filter_Ctx_t *CtxPtr)
     return SBN_SUCCESS;
 } /* end RecvFilter_Nominal() */
 
-static void ProcessPeerMsg_AppMsg_PassMsgErr(void)
+static void Test_SBN_Inbound_ProcessMsg_AppMsg_PassMsgErr(void)
 {
     START();
     SBN_BufferDesc_t BufD;
@@ -102,7 +102,7 @@ static void ProcessPeerMsg_AppMsg_PassMsgErr(void)
     EVENT_CNT(1);
 } /* end ProcessPeerMsg_AppMsg_PassMsgErr() */
 
-static void ProcessPeerMsg_AppMsg_Nominal(void)
+static void Test_SBN_Inbound_ProcessMsg_AppMsg_Nominal(void)
 {
     START();
 
@@ -112,7 +112,6 @@ static void ProcessPeerMsg_AppMsg_Nominal(void)
      * - Filters[0]: Filter_Empty (NULL FilterRecv function) - Should be skipped during processing
      * - Filters[1]: Filter_Nominal (returns SBN_SUCCESS) - Allows message to pass through
      * - ProcessorID/SpacecraftID: Set to match the message being processed to ensure peer lookup succeeds */
-    UT_ResetState(0);
     SBN_FilterInterface_t Filter_Empty, Filter_Nominal;
     SBN_BufferDesc_t      BufD;
 
@@ -135,30 +134,14 @@ static void ProcessPeerMsg_AppMsg_Nominal(void)
     UtAssert_INT32_EQ(SBN_Inbound_ProcessMsg(&BufD, PeerRec), SBN_SUCCESS);
 } /* end ProcessPeerMsg_AppMsg_Nominal() */
 
-static void ProcessPeerMsg_SubMsg_Nominal(void)
+static void Test_SBN_Inbound_ProcessMsg_SubMsg_Nominal(void)
 {
-#ifdef jphfix
     START();
 
-    UT_ResetState(0);
     uint8            Buf[SBN_PACKED_SUB_SZ];
-    SBN_PackState_t  Pack;
     SBN_BufferDesc_t BufD;
-    uint32           StartVersion;
-
-    StartVersion = PeerRec->Priv.SubQ.CurrVersion;
 
     memset(&BufD, 0, sizeof(BufD));
-
-    SBN_Pack_Init(&Pack, &Buf, SBN_PACKED_SUB_SZ, false);
-    SBN_Pack_Data(&Pack, (void *)SBN_IDENT, SBN_IDENT_LEN);
-    SBN_Pack_UInt16(&Pack, 1);
-    SBN_Pack_MsgID(&Pack, MsgID);
-    CFE_SB_Qos_t QoS = { 0 };
-    SBN_Pack_Data(&Pack, (void *)&QoS, sizeof(QoS));
-
-    UT_SetDeferredRetcode(UT_KEY(CFE_PSP_GetProcessorId), 1, ProcessorID);
-    UT_SetDeferredRetcode(UT_KEY(CFE_PSP_GetSpacecraftId), 1, SpacecraftID);
 
     BufD.MsgType      = SBN_SUB_MSG;
     BufD.ActualDataSz = sizeof(Buf);
@@ -166,58 +149,30 @@ static void ProcessPeerMsg_SubMsg_Nominal(void)
     BufD.DataPtr      = Buf;
 
     UtAssert_INT32_EQ(SBN_Inbound_ProcessMsg(&BufD, PeerRec), SBN_SUCCESS);
-
-    UtAssert_UINT32_EQ(PeerRec->Priv.SubQ.CurrVersion, StartVersion + 1);
-#endif
+    UtAssert_STUB_COUNT(SBN_Subs_ProcessMsgFromPeer, 1);
 } /* end ProcessPeerMsg_SubMsg_Nominal() */
 
-static void ProcessPeerMsg_UnSubMsg_Nominal(void)
+static void Test_SBN_Inbound_ProcessMsg_UnSubMsg_Nominal(void)
 {
-#ifdef jphfix
     START();
 
-    UT_ResetState(0);
     uint8            Buf[SBN_PACKED_SUB_SZ];
-    SBN_PackState_t  Pack;
     SBN_BufferDesc_t BufD;
-    uint32           StartVersion;
-
-    StartVersion = PeerRec->Priv.SubQ.CurrVersion;
 
     memset(&BufD, 0, sizeof(BufD));
-
-    SBN_Pack_Init(&Pack, &Buf, sizeof(Buf), false);
-    SBN_Pack_Data(&Pack, (void *)SBN_IDENT, SBN_IDENT_LEN);
-    SBN_Pack_UInt16(&Pack, 1);
-
-    SBN_Pack_MsgID(&Pack, MsgID);
-    CFE_SB_Qos_t QoS;
-    SBN_Pack_Data(&Pack, &QoS, sizeof(QoS));
-
-    UT_SetDeferredRetcode(UT_KEY(CFE_PSP_GetProcessorId), 1, ProcessorID);
-    UT_SetDeferredRetcode(UT_KEY(CFE_PSP_GetSpacecraftId), 1, SpacecraftID);
-
-    BufD.MsgType      = SBN_SUB_MSG;
-    BufD.ActualDataSz = sizeof(Buf);
-    BufD.MaxDataSz    = BufD.ActualDataSz;
-    BufD.DataPtr      = Buf;
-    UtAssert_INT32_EQ(SBN_Inbound_ProcessMsg(&BufD, PeerRec), SBN_SUCCESS);
-    UtAssert_UINT32_EQ(PeerRec->Priv.SubQ.CurrVersion, StartVersion + 1);
 
     BufD.MsgType      = SBN_UNSUB_MSG;
     BufD.ActualDataSz = sizeof(Buf);
     BufD.MaxDataSz    = BufD.ActualDataSz;
     BufD.DataPtr      = Buf;
     UtAssert_INT32_EQ(SBN_Inbound_ProcessMsg(&BufD, PeerRec), SBN_SUCCESS);
-    UtAssert_UINT32_EQ(PeerRec->Priv.SubQ.CurrVersion, StartVersion + 2);
-#endif
+    UtAssert_STUB_COUNT(SBN_Subs_ProcessMsgFromPeer, 1);
 } /* end ProcessPeerMsg_UnSubMsg_Nominal() */
 
-static void ProcessPeerMsg_NoMsg_Nominal(void)
+static void Test_SBN_Inbound_ProcessMsg_NoMsg_Nominal(void)
 {
     START();
 
-    UT_ResetState(0);
     SBN_BufferDesc_t BufD;
 
     memset(&BufD, 0, sizeof(BufD));
@@ -227,11 +182,10 @@ static void ProcessPeerMsg_NoMsg_Nominal(void)
     UtAssert_INT32_EQ(SBN_Inbound_ProcessMsg(&BufD, PeerRec), SBN_SUCCESS);
 } /* end ProcessPeerMsg_NoMsg_Nominal() */
 
-static void ProcessPeerMsg_MsgErr(void)
+static void Test_SBN_Inbound_ProcessMsg_MsgErr(void)
 {
     START();
 
-    UT_ResetState(0);
     SBN_BufferDesc_t BufD;
 
     memset(&BufD, 0, sizeof(BufD));
@@ -242,19 +196,90 @@ static void ProcessPeerMsg_MsgErr(void)
     UtAssert_INT32_EQ(SBN_Inbound_ProcessMsg(&BufD, PeerRec), SBN_ERROR);
 } /* end ProcessPeerMsg_MsgErr() */
 
-static void Test_SBN_Inbound_ProcessMsg(void)
+void Test_SBN_Inbound_ProcessMsg_Other(void)
 {
-    ProcessPeerMsg_AppMsg_FiltErr();
-    ProcessPeerMsg_AppMsg_FiltOut();
-    ProcessPeerMsg_AppMsg_PassMsgErr();
-    ProcessPeerMsg_MsgErr();
+    START();
 
-    ProcessPeerMsg_AppMsg_Nominal();
-    ProcessPeerMsg_SubMsg_Nominal();
-    ProcessPeerMsg_UnSubMsg_Nominal();
-    ProcessPeerMsg_NoMsg_Nominal();
-} /* end Test_SBN_Inbound_ProcessMsg() */
+    SBN_BufferDesc_t BufD;
 
+    memset(&BufD, 0, sizeof(BufD));
+
+    BufD.MsgType = SBN_MODULE_SPECIFIC_MESSAGE_ID_MASK;
+
+    UtAssert_INT32_EQ(SBN_Inbound_ProcessMsg(&BufD, PeerRec), SBN_SUCCESS);
+
+    BufD.MsgType = SBN_PROTO_MSG;
+
+    UtAssert_INT32_EQ(SBN_Inbound_ProcessMsg(&BufD, PeerRec), SBN_SUCCESS);
+    UtAssert_STUB_COUNT(SBN_Connection_RecvProtocolVersionMsg, 1);
+}
+
+void Test_SBN_Inbound_IsPeerScheduled(void)
+{
+    /* Test Case For:
+     * bool SBN_Inbound_IsPeerScheduled(SBN_PeerRecord_t *PeerRec)
+     */
+    SBN_PeerRecord_t *PeerRec = &SBN_AppData.PeerRecords[0];
+    UtAssert_BOOL_FALSE(SBN_Inbound_IsPeerScheduled(PeerRec));
+}
+
+void Test_SBN_Inbound_IsNetScheduled(void)
+{
+    /* Test Case For:
+     * bool SBN_Inbound_IsNetScheduled(SBN_NetRecord_t *NetRec)
+     */
+    SBN_NetRecord_t *NetRec = &SBN_AppData.NetRecords[0];
+    UtAssert_BOOL_FALSE(SBN_Inbound_IsNetScheduled(NetRec));
+}
+
+void Test_SBN_Inbound_ServicePeer(void)
+{
+    /* Test Case For:
+     * void SBN_Inbound_ServicePeer(SBN_PeerRecord_t *PeerRec, SBN_BufferDesc_t *BufD)
+     */
+    SBN_PeerRecord_t *PeerRec = &SBN_AppData.PeerRecords[0];
+    SBN_BufferDesc_t BufD;
+
+    memset(&BufD, 0, sizeof(BufD));
+
+    UtAssert_VOIDCALL(SBN_Inbound_ServicePeer(PeerRec, &BufD));
+}
+
+void Test_SBN_Inbound_ServiceNet(void)
+{
+    /* Test Case For:
+     * void SBN_Inbound_ServiceNet(SBN_NetRecord_t *NetRec, SBN_BufferDesc_t *BufD)
+     */
+    SBN_NetRecord_t *NetRec = &SBN_AppData.NetRecords[0];
+    SBN_BufferDesc_t BufD;
+
+    memset(&BufD, 0, sizeof(BufD));
+
+    UtAssert_VOIDCALL(SBN_Inbound_ServiceNet(NetRec, &BufD));
+}
+
+void Test_SBN_Inbound_PollCycle(void)
+{
+    START();
+
+    /* Test Case For:
+     * void SBN_Inbound_PollCycle(void)
+     */
+    SBN_NetRecord_t *NetRec = &SBN_AppData.NetRecords[0];
+    SBN_PeerRecord_t *PeerRec = &SBN_AppData.PeerRecords[0];
+
+    /* This first call will basically do nothing */
+    UtAssert_VOIDCALL(SBN_Inbound_PollCycle());
+
+    /* Enable scheduling - this will now schedule it */
+    NetRec->Sched.InboundSchedulingEnabled = true;
+    PeerRec->Sched.InboundSchedulingEnabled = true;
+    UtAssert_VOIDCALL(SBN_Inbound_PollCycle());
+
+    UT_SetDefaultReturnValue(UT_KEY(SBN_Worker_IsJobPending), true);
+    UtAssert_VOIDCALL(SBN_Inbound_PollCycle());
+
+}
 
 void UT_Setup(void)
 {
@@ -266,5 +291,18 @@ void UT_TearDown(void)
 
 void UtTest_Setup(void)
 {
-    ADD_TEST(SBN_Inbound_ProcessMsg);
+    ADD_TEST(SBN_Inbound_ProcessMsg_AppMsg_FiltErr);
+    ADD_TEST(SBN_Inbound_ProcessMsg_AppMsg_FiltOut);
+    ADD_TEST(SBN_Inbound_ProcessMsg_AppMsg_PassMsgErr);
+    ADD_TEST(SBN_Inbound_ProcessMsg_MsgErr);
+    ADD_TEST(SBN_Inbound_ProcessMsg_AppMsg_Nominal);
+    ADD_TEST(SBN_Inbound_ProcessMsg_SubMsg_Nominal);
+    ADD_TEST(SBN_Inbound_ProcessMsg_UnSubMsg_Nominal);
+    ADD_TEST(SBN_Inbound_ProcessMsg_NoMsg_Nominal);
+    ADD_TEST(SBN_Inbound_ProcessMsg_Other);
+    ADD_TEST(SBN_Inbound_IsPeerScheduled);
+    ADD_TEST(SBN_Inbound_IsNetScheduled);
+    ADD_TEST(SBN_Inbound_ServicePeer);
+    ADD_TEST(SBN_Inbound_ServiceNet);
+    ADD_TEST(SBN_Inbound_PollCycle);
 }

@@ -20,12 +20,47 @@
 #include "sbn_app.h"
 #include "sbn_connection.h"
 #include "sbn_error.h"
+#include "sbn_outbound.h"
 
-static void ProcessPeerMsg_ProtoMsg_VerErr(void)
+void Test_SBN_Connection_SendProtocolVersionMsg_SendErr(void)
 {
     START();
 
-    UT_ResetState(0);
+    /* Test case for:
+     * SBN_Status_t SBN_Connection_SendProtocolVersionMsg(SBN_BufferDesc_t *BufD, SBN_PeerRecord_t *PeerRec)
+     */
+    uint8 Buf[16];
+    SBN_BufferDesc_t BufD;
+    memset(&BufD, 0, sizeof(BufD));
+
+    BufD.DataPtr      = Buf;
+    BufD.MaxDataSz    = sizeof(Buf);
+
+    UT_SetDefaultReturnValue(UT_KEY(SBN_Outbound_SendToPeer), SBN_ERROR);
+     UtAssert_INT32_EQ(SBN_Connection_SendProtocolVersionMsg(&BufD, PeerRec), SBN_ERROR);
+}
+
+void Test_SBN_Connection_SendProtocolVersionMsg_Nominal(void)
+{
+    START();
+
+    /* Test case for:
+     * SBN_Status_t SBN_Connection_SendProtocolVersionMsg(SBN_BufferDesc_t *BufD, SBN_PeerRecord_t *PeerRec)
+     */
+    uint8 Buf[16];
+    SBN_BufferDesc_t BufD;
+    memset(&BufD, 0, sizeof(BufD));
+
+    BufD.DataPtr      = Buf;
+    BufD.MaxDataSz    = sizeof(Buf);
+
+     UtAssert_INT32_EQ(SBN_Connection_SendProtocolVersionMsg(&BufD, PeerRec), SBN_SUCCESS);
+}
+
+void Test_SBN_Connection_RecvProtocolVersionMsg_VerErr(void)
+{
+    START();
+
     UT_CheckEvent_Setup(SBN_SB_EID, "SBN protocol version mismatch with peer ");
 
     uint8 ver = SBN_PROTO_VER + 1;
@@ -39,11 +74,15 @@ static void ProcessPeerMsg_ProtoMsg_VerErr(void)
     BufD.DataPtr      = &ver;
 
     UtAssert_INT32_EQ(SBN_Connection_RecvProtocolVersionMsg(&BufD, PeerRec), SBN_ERROR);
-
     EVENT_CNT(1);
+
+    /* same but size check fails */
+    BufD.ActualDataSz = 0;
+    UtAssert_INT32_EQ(SBN_Connection_RecvProtocolVersionMsg(&BufD, PeerRec), SBN_ERROR);
+
 } /* end ProcessPeerMsg_ProtoMsg_VerErr() */
 
-static void ProcessPeerMsg_ProtoMsg_Nominal(void)
+void Test_SBN_Connection_RecvProtocolVersionMsg_Nominal(void)
 {
     START();
 
@@ -65,13 +104,7 @@ static void ProcessPeerMsg_ProtoMsg_Nominal(void)
     EVENT_CNT(1);
 } /* end ProcessPeerMsg_ProtoMsg_Nominal() */
 
-static void Test_SBN_ProcessPeerMsg(void)
-{
-    ProcessPeerMsg_ProtoMsg_VerErr();
-    ProcessPeerMsg_ProtoMsg_Nominal();
-} /* end Test_SBN_ProcessPeerMsg() */
-
-static void Connected_AlreadyErr(void)
+void Test_SBN_Connection_HandleConnect_AlreadyErr(void)
 {
     START();
 
@@ -88,7 +121,7 @@ static void Connected_AlreadyErr(void)
     EVENT_CNT(1);
 } /* end Connected_AlreadyErr() */
 
-static void Connected_Nominal(void)
+void Test_SBN_Connection_HandleConnect_Nominal(void)
 {
     START();
 
@@ -98,13 +131,7 @@ static void Connected_Nominal(void)
     UtAssert_INT32_EQ(PeerPtr->Connected, 1);
 } /* end Connected_Nominal() */
 
-static void Test_SBN_Connection_HandleConnect(void)
-{
-    Connected_AlreadyErr();
-    Connected_Nominal();
-} /* end Test_SBN_Connection_HandleConnect() */
-
-static void Disconnected_ConnErr(void)
+void Test_SBN_Connection_HandleDisconnect_ConnErr(void)
 {
     START();
 
@@ -123,7 +150,7 @@ static void Disconnected_ConnErr(void)
     EVENT_CNT(1);
 } /* end Disconnected_Nominal() */
 
-static void Disconnected_Nominal(void)
+void Test_SBN_Connection_HandleDisconnect_Nominal(void)
 {
     START();
 
@@ -144,11 +171,32 @@ static void Disconnected_Nominal(void)
     EVENT_CNT(1);
 } /* end Disconnected_Nominal() */
 
-static void Test_SBN_Connection_HandleDisconnect(void)
+void Test_SBN_Connection_CheckPeer(void)
 {
-    Disconnected_ConnErr();
-    Disconnected_Nominal();
-} /* end Test_SBN_Connection_HandleDisconnect() */
+    START();
+
+    /* Test Case For:
+     * SBN_Status_t SBN_Connection_CheckPeer(SBN_PeerRecord_t *PeerRec, SBN_BufferDesc_t *BufD)
+     */
+    SBN_PeerRecord_t *PeerRec = &SBN_AppData.PeerRecords[0];
+    SBN_BufferDesc_t BufD;
+
+    memset(&BufD, 0, sizeof(BufD));
+
+    UtAssert_INT32_EQ(SBN_Connection_CheckPeer(PeerRec, &BufD), SBN_SUCCESS);
+}
+
+void Test_SBN_Connection_PollCycle(void)
+{
+    START();
+
+    /* Test Case For:
+     * void SBN_Connection_PollCycle(void);
+     */
+
+    UtAssert_VOIDCALL(SBN_Connection_PollCycle());
+}
+
 
 void UT_Setup(void)
 {
@@ -160,7 +208,14 @@ void UT_TearDown(void)
 
 void UtTest_Setup(void)
 {
-    ADD_TEST(SBN_ProcessPeerMsg);
-    ADD_TEST(SBN_Connection_HandleConnect);
-    ADD_TEST(SBN_Connection_HandleDisconnect);
+    ADD_TEST(SBN_Connection_HandleConnect_AlreadyErr);
+    ADD_TEST(SBN_Connection_HandleConnect_Nominal);
+    ADD_TEST(SBN_Connection_HandleDisconnect_ConnErr);
+    ADD_TEST(SBN_Connection_HandleDisconnect_Nominal);
+    ADD_TEST(SBN_Connection_SendProtocolVersionMsg_SendErr);
+    ADD_TEST(SBN_Connection_SendProtocolVersionMsg_Nominal    );
+    ADD_TEST(SBN_Connection_RecvProtocolVersionMsg_VerErr);
+    ADD_TEST(SBN_Connection_RecvProtocolVersionMsg_Nominal);
+    ADD_TEST(SBN_Connection_CheckPeer);
+    ADD_TEST(SBN_Connection_PollCycle);
 }

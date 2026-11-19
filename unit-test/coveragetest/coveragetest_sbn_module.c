@@ -18,9 +18,45 @@
 
 #include "sbn_coveragetest_common.h"
 #include "sbn_module.h"
+#include "sbn_module_bindings.h"
+
+void Test_SBN_Module_GetProtocolIf(void)
+{
+    /* Test Case For:
+     * SBN_Status_t SBN_Module_GetProtocolIf(const char *ModName, const SBN_IfOps_t **ProtoIf);
+    */
+    const SBN_IfOps_t *Intf;
+
+    UT_SBN_MODULE_BINDINGS[0].Intf = IfOpsPtr;
+    UT_SBN_MODULE_BINDINGS[0].SymName = "UTS";
+    UT_SBN_MODULE_BINDINGS[0].ModName = "UTM";
+
+    UtAssert_INT32_EQ(SBN_Module_GetProtocolIf("UTS", &Intf), SBN_SUCCESS);
+    UtAssert_ADDRESS_EQ(Intf, IfOpsPtr);
+
+    UtAssert_INT32_EQ(SBN_Module_GetProtocolIf("BAD", &Intf), SBN_ERROR);
+}
+
+void Test_SBN_Module_GetFilterIf(void)
+{
+    /* Test Case For:
+     * SBN_Status_t SBN_Module_GetFilterIf(const char *ModName, const SBN_FilterInterface_t **FilterIf);
+    */
+    const SBN_FilterInterface_t *Intf;
+
+    UT_SBN_MODULE_BINDINGS[0].Intf = FilterInterfacePtr;
+    UT_SBN_MODULE_BINDINGS[0].SymName = "UTS";
+    UT_SBN_MODULE_BINDINGS[0].ModName = "UTM";
+
+    UtAssert_INT32_EQ(SBN_Module_GetFilterIf("UTS", &Intf), SBN_SUCCESS);
+    UtAssert_ADDRESS_EQ(Intf, FilterInterfacePtr);
+
+    UtAssert_INT32_EQ(SBN_Module_GetFilterIf("BAD", &Intf), SBN_ERROR);
+}
 
 void UT_Setup(void)
 {
+    memset(UT_SBN_MODULE_BINDINGS, 0, sizeof(UT_SBN_MODULE_BINDINGS));
 } /* end UT_Setup() */
 
 void UT_TearDown(void)
@@ -29,4 +65,6 @@ void UT_TearDown(void)
 
 void UtTest_Setup(void)
 {
+    ADD_TEST(SBN_Module_GetProtocolIf);
+    ADD_TEST(SBN_Module_GetFilterIf);
 }

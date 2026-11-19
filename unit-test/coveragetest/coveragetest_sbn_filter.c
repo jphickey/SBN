@@ -22,6 +22,8 @@
 
 void Test_SBN_Filter_Gatekeeper(void)
 {
+    START();
+
     /* Test Case For:
      * SBN_Status_t SBN_Filter_Gatekeeper(const CFE_MSG_Message_t *MsgPtr, SBN_PeerInterface_t *Peer, SBN_Filter_Direction_Enum_t Dir);
      */
@@ -31,6 +33,10 @@ void Test_SBN_Filter_Gatekeeper(void)
 
     memset(&Msg, 0, sizeof(Msg));
 
+    Peer->FilterCnt = 2;
+    Peer->Filters[0] = NULL;
+    Peer->Filters[1] = FilterInterfacePtr;
+
     UtAssert_INT32_EQ(SBN_Filter_Gatekeeper(&Msg, Peer, SBN_Filter_Direction_INVALID), SBN_SUCCESS);
     UtAssert_INT32_EQ(SBN_Filter_Gatekeeper(&Msg, Peer, SBN_Filter_Direction_OUTBOUND), SBN_SUCCESS);
     UtAssert_INT32_EQ(SBN_Filter_Gatekeeper(&Msg, Peer, SBN_Filter_Direction_INBOUND), SBN_SUCCESS);
@@ -38,6 +44,8 @@ void Test_SBN_Filter_Gatekeeper(void)
 
 void Test_SBN_Filter_Mutation(void)
 {
+    START();
+
     /* Test Case For:
      * SBN_Status_t SBN_Filter_Mutation(SBN_BufferDesc_t *BufD, SBN_PeerInterface_t *Peer, SBN_Filter_Direction_Enum_t Dir);
      */
@@ -47,6 +55,10 @@ void Test_SBN_Filter_Mutation(void)
 
     memset(&BufD, 0, sizeof(BufD));
     memset(&Msg, 0, sizeof(Msg));
+
+    Peer->FilterCnt = 2;
+    Peer->Filters[0] = NULL;
+    Peer->Filters[1] = FilterInterfacePtr;
 
     BufD.ActualDataSz = sizeof(Msg);
     BufD.MaxDataSz = sizeof(Msg);
@@ -60,6 +72,8 @@ void Test_SBN_Filter_Mutation(void)
 
 void Test_SBN_Filter_Remap(void)
 {
+    START();
+
     /* Test Case For:
      * SBN_Status_t SBN_Filter_Remap(CFE_SB_MsgId_t *MsgIdPtr, SBN_PeerInterface_t *Peer);
      */
@@ -67,6 +81,10 @@ void Test_SBN_Filter_Remap(void)
     SBN_PeerInterface_t *Peer = &SBN_AppData.PeerRecords[0].Intf;
 
     MsgId = CFE_SB_ValueToMsgId(0xAAAA);
+
+    Peer->FilterCnt = 2;
+    Peer->Filters[0] = NULL;
+    Peer->Filters[1] = FilterInterfacePtr;
 
     UtAssert_INT32_EQ(SBN_Filter_Remap(&MsgId, Peer), SBN_SUCCESS);
 }
