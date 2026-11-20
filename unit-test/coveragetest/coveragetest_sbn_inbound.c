@@ -24,6 +24,62 @@
 #include "sbn_worker.h"
 #include "sbn_connection.h"
 
+static SBN_Status_t RecvFromPeer_Nominal(SBN_NetInterface_t  *Net,
+                                SBN_PeerInterface_t *Peer,
+                                 SBN_MsgType_t      *MsgTypePtr,
+                                 SBN_MsgSz_t        *MsgSzPtr,
+                                 SBN_ProcessorID_t  *ProcessorIDPtr,
+                                 SBN_SpacecraftID_t *SpacecraftIDPtr,
+                                 void               *PayloadBuffer)
+{
+    *ProcessorIDPtr = 1235;
+
+    return SBN_SUCCESS;
+} /* end RecvFromNet_Nominal() */
+
+static SBN_Status_t RecvFromPeer_Err(SBN_NetInterface_t  *Net,
+                                SBN_PeerInterface_t *Peer,
+                                 SBN_MsgType_t      *MsgTypePtr,
+                                 SBN_MsgSz_t        *MsgSzPtr,
+                                 SBN_ProcessorID_t  *ProcessorIDPtr,
+                                 SBN_SpacecraftID_t *SpacecraftIDPtr,
+                                 void               *PayloadBuffer)
+{
+    return SBN_ERROR;
+} /* end RecvFromNet_Nominal() */
+
+static SBN_Status_t RecvFromPeer_Empty(SBN_NetInterface_t  *Net,
+                                SBN_PeerInterface_t *Peer,
+                                 SBN_MsgType_t      *MsgTypePtr,
+                                 SBN_MsgSz_t        *MsgSzPtr,
+                                 SBN_ProcessorID_t  *ProcessorIDPtr,
+                                 SBN_SpacecraftID_t *SpacecraftIDPtr,
+                                 void               *PayloadBuffer)
+{
+    return SBN_IF_EMPTY;
+} /* end RecvFromNet_Nominal() */
+
+static SBN_Status_t RecvFromNet_Empty(SBN_NetInterface_t  *Net,
+                                 SBN_MsgType_t      *MsgTypePtr,
+                                 SBN_MsgSz_t        *MsgSzPtr,
+                                 SBN_ProcessorID_t  *ProcessorIDPtr,
+                                 SBN_SpacecraftID_t *SpacecraftIDPtr,
+                                 void               *PayloadBuffer)
+{
+    return SBN_IF_EMPTY;
+} /* end RecvFromNet_Nominal() */
+
+static SBN_Status_t RecvFromNet_Err(SBN_NetInterface_t  *Net,
+                                 SBN_MsgType_t      *MsgTypePtr,
+                                 SBN_MsgSz_t        *MsgSzPtr,
+                                 SBN_ProcessorID_t  *ProcessorIDPtr,
+                                 SBN_SpacecraftID_t *SpacecraftIDPtr,
+                                 void               *PayloadBuffer)
+{
+    return SBN_ERROR;
+} /* end RecvFromNet_Nominal() */
+
+
 static void Test_SBN_Inbound_ProcessMsg_AppMsg_FiltErr(void)
 {
     START();
@@ -216,6 +272,8 @@ void Test_SBN_Inbound_ProcessMsg_Other(void)
 
 void Test_SBN_Inbound_IsPeerScheduled(void)
 {
+    START();
+
     /* Test Case For:
      * bool SBN_Inbound_IsPeerScheduled(SBN_PeerRecord_t *PeerRec)
      */
@@ -225,6 +283,8 @@ void Test_SBN_Inbound_IsPeerScheduled(void)
 
 void Test_SBN_Inbound_IsNetScheduled(void)
 {
+    START();
+
     /* Test Case For:
      * bool SBN_Inbound_IsNetScheduled(SBN_NetRecord_t *NetRec)
      */
@@ -234,6 +294,8 @@ void Test_SBN_Inbound_IsNetScheduled(void)
 
 void Test_SBN_Inbound_ServicePeer(void)
 {
+    START();
+
     /* Test Case For:
      * void SBN_Inbound_ServicePeer(SBN_PeerRecord_t *PeerRec, SBN_BufferDesc_t *BufD)
      */
@@ -241,12 +303,29 @@ void Test_SBN_Inbound_ServicePeer(void)
     SBN_BufferDesc_t BufD;
 
     memset(&BufD, 0, sizeof(BufD));
+    IfOpsPtr->RecvFromPeer = RecvFromPeer_Nominal;
+    IfOpsPtr->RecvFromNet = NULL;
 
     UtAssert_VOIDCALL(SBN_Inbound_ServicePeer(PeerRec, &BufD));
+
+    PeerRec->Intf.Connected = true;
+    PeerRec->Sched.InboundAutoReschedule = true;
+    UtAssert_VOIDCALL(SBN_Inbound_ServicePeer(PeerRec, &BufD));
+
+    IfOpsPtr->RecvFromPeer = RecvFromPeer_Err;
+    UtAssert_VOIDCALL(SBN_Inbound_ServicePeer(PeerRec, &BufD));
+
+    IfOpsPtr->RecvFromPeer = RecvFromPeer_Empty;
+    UtAssert_VOIDCALL(SBN_Inbound_ServicePeer(PeerRec, &BufD));
+
+    IfOpsPtr->RecvFromPeer = NULL;
+    IfOpsPtr->RecvFromNet = RecvFromNet_Nominal;
 }
 
 void Test_SBN_Inbound_ServiceNet(void)
 {
+    START();
+
     /* Test Case For:
      * void SBN_Inbound_ServiceNet(SBN_NetRecord_t *NetRec, SBN_BufferDesc_t *BufD)
      */
@@ -255,7 +334,20 @@ void Test_SBN_Inbound_ServiceNet(void)
 
     memset(&BufD, 0, sizeof(BufD));
 
+    IfOpsPtr->RecvFromNet = RecvFromNet_Nominal;
+
     UtAssert_VOIDCALL(SBN_Inbound_ServiceNet(NetRec, &BufD));
+
+    NetRec->Sched.InboundAutoReschedule = true;
+    UtAssert_VOIDCALL(SBN_Inbound_ServiceNet(NetRec, &BufD));
+
+    IfOpsPtr->RecvFromNet = RecvFromNet_Err;
+    UtAssert_VOIDCALL(SBN_Inbound_ServiceNet(NetRec, &BufD));
+
+    IfOpsPtr->RecvFromNet = RecvFromNet_Empty;
+    UtAssert_VOIDCALL(SBN_Inbound_ServiceNet(NetRec, &BufD));
+
+    IfOpsPtr->RecvFromNet = RecvFromNet_Nominal;
 }
 
 void Test_SBN_Inbound_PollCycle(void)

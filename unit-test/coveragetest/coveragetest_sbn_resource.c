@@ -29,6 +29,8 @@ void Test_SBN_NetId_AsInt(void)
     SBN_NetId_t NetId = SBN_NETID_C(CFE_ResourceId_FromInteger(2));
 
     UtAssert_INT32_EQ(SBN_NetId_AsInt(NetId), 2);
+    UT_SetDeferredRetcode(UT_KEY(CFE_ResourceId_ToIndex), 1, -1);
+    UtAssert_INT32_EQ(SBN_NetId_AsInt(NetId), -1);
 }
 
 void Test_SBN_PeerId_AsInt(void)
@@ -39,6 +41,8 @@ void Test_SBN_PeerId_AsInt(void)
     SBN_PeerId_t PeerId = SBN_PEERID_C(CFE_ResourceId_FromInteger(3));
 
     UtAssert_INT32_EQ(SBN_PeerId_AsInt(PeerId), 3);
+    UT_SetDeferredRetcode(UT_KEY(CFE_ResourceId_ToIndex), 1, -1);
+    UtAssert_INT32_EQ(SBN_PeerId_AsInt(PeerId), -1);
 }
 
 void Test_SBN_CheckNetIdSlotUsed(void)
@@ -49,8 +53,15 @@ void Test_SBN_CheckNetIdSlotUsed(void)
      * bool SBN_CheckNetIdSlotUsed(CFE_ResourceId_t CheckId);
      */
     CFE_ResourceId_t CheckId = CFE_ResourceId_FromInteger(1);
+    SBN_NetRecord_t *NetRec = &SBN_AppData.NetRecords[1];
 
     UtAssert_BOOL_FALSE(SBN_CheckNetIdSlotUsed(CheckId));
+
+    NetRec->NetId = SBN_NETID_C(CheckId);
+    UtAssert_BOOL_TRUE(SBN_CheckNetIdSlotUsed(CheckId));
+
+    UT_SetDeferredRetcode(UT_KEY(CFE_ResourceId_ToIndex), 1, -1);
+    UtAssert_BOOL_TRUE(SBN_CheckNetIdSlotUsed(CheckId));
 }
 
 void Test_SBN_CheckPeerIdSlotUsed(void)
@@ -61,8 +72,15 @@ void Test_SBN_CheckPeerIdSlotUsed(void)
      * bool SBN_CheckPeerIdSlotUsed(CFE_ResourceId_t CheckId);
      */
     CFE_ResourceId_t CheckId = CFE_ResourceId_FromInteger(2);
+    SBN_PeerRecord_t *PeerRec = &SBN_AppData.PeerRecords[2];
 
     UtAssert_BOOL_FALSE(SBN_CheckPeerIdSlotUsed(CheckId));
+
+    PeerRec->PeerId = SBN_PEERID_C(CheckId);
+    UtAssert_BOOL_TRUE(SBN_CheckPeerIdSlotUsed(CheckId));
+
+    UT_SetDeferredRetcode(UT_KEY(CFE_ResourceId_ToIndex), 1, -1);
+    UtAssert_BOOL_TRUE(SBN_CheckPeerIdSlotUsed(CheckId));
 }
 
 void Test_SBN_LocatePeerRecordByID(void)
@@ -75,6 +93,9 @@ void Test_SBN_LocatePeerRecordByID(void)
     SBN_PeerId_t PeerId = SBN_PEERID_C(CFE_ResourceId_FromInteger(1));
     SBN_PeerRecord_t *PeerRec = &SBN_AppData.PeerRecords[1];
     UtAssert_ADDRESS_EQ(SBN_LocatePeerRecordByID(PeerId), PeerRec);
+
+    UT_SetDeferredRetcode(UT_KEY(CFE_ResourceId_ToIndex), 1, -1);
+    UtAssert_NULL(SBN_LocatePeerRecordByID(PeerId));
 }
 
 void Test_SBN_LocateNetRecordByID(void)
@@ -87,6 +108,9 @@ void Test_SBN_LocateNetRecordByID(void)
     SBN_NetId_t NetId = SBN_NETID_C(CFE_ResourceId_FromInteger(1));
     SBN_NetRecord_t *NetRec = &SBN_AppData.NetRecords[1];
     UtAssert_ADDRESS_EQ(SBN_LocateNetRecordByID(NetId), NetRec);
+
+    UT_SetDeferredRetcode(UT_KEY(CFE_ResourceId_ToIndex), 1, -1);
+    UtAssert_NULL(SBN_LocateNetRecordByID(NetId));
 }
 
 void Test_SBN_RegisterPeer(void)
@@ -99,6 +123,17 @@ void Test_SBN_RegisterPeer(void)
     SBN_PeerId_t PeerId;
 
     UtAssert_INT32_EQ(SBN_RegisterPeer(&PeerId), SBN_SUCCESS);
+    UtAssert_INT32_EQ(SBN_RegisterPeer(&PeerId), SBN_SUCCESS);
+
+    /* This is so the allocation will find "used" entries */
+    UT_ResetState(UT_KEY(CFE_ResourceId_FindNext));
+    UtAssert_INT32_EQ(SBN_RegisterPeer(&PeerId), SBN_SUCCESS);
+
+    UT_SetDeferredRetcode(UT_KEY(CFE_ResourceId_FindNext), 1, -1);
+    UtAssert_INT32_EQ(SBN_RegisterPeer(&PeerId), SBN_ERROR);
+
+    UT_SetDefaultReturnValue(UT_KEY(CFE_ResourceId_ToIndex), -1);
+    UtAssert_INT32_EQ(SBN_RegisterPeer(&PeerId), SBN_ERROR);
 }
 
 void Test_SBN_RegisterNet(void)
@@ -111,6 +146,18 @@ void Test_SBN_RegisterNet(void)
     SBN_NetId_t NetId;
 
     UtAssert_INT32_EQ(SBN_RegisterNet(&NetId), SBN_SUCCESS);
+    UtAssert_INT32_EQ(SBN_RegisterNet(&NetId), SBN_SUCCESS);
+
+    /* This is so the allocation will find "used" entries */
+    UT_ResetState(UT_KEY(CFE_ResourceId_FindNext));
+    UtAssert_INT32_EQ(SBN_RegisterNet(&NetId), SBN_SUCCESS);
+
+
+    UT_SetDeferredRetcode(UT_KEY(CFE_ResourceId_FindNext), 1, -1);
+    UtAssert_INT32_EQ(SBN_RegisterNet(&NetId), SBN_ERROR);
+
+    UT_SetDefaultReturnValue(UT_KEY(CFE_ResourceId_ToIndex), -1);
+    UtAssert_INT32_EQ(SBN_RegisterNet(&NetId), SBN_ERROR);
 }
 
 void Test_SBN_LocateNetRecordByExtIdx(void)
@@ -123,6 +170,7 @@ void Test_SBN_LocateNetRecordByExtIdx(void)
     SBN_NetRecord_t *NetRec = &SBN_AppData.NetRecords[0];
 
     UtAssert_ADDRESS_EQ(SBN_LocateNetRecordByExtIdx(0), NetRec);
+    UtAssert_NULL(SBN_LocateNetRecordByExtIdx(SBN_PLATFORM_MAX_NETS));
 }
 
 void Test_SBN_LocatePeerRecordInNet(void)
@@ -134,6 +182,8 @@ void Test_SBN_LocatePeerRecordInNet(void)
     SBN_PeerRecord_t *PeerRec = &SBN_AppData.PeerRecords[0];
 
     UtAssert_ADDRESS_EQ(SBN_LocatePeerRecordInNet(NetRec,0), PeerRec);
+    UtAssert_NULL(SBN_LocatePeerRecordInNet(NetRec,SBN_MISSION_MAX_PEER_CNT));
+    UtAssert_NULL(SBN_LocatePeerRecordInNet(NULL,0));
 }
 
 static SBN_Status_t UT_SBN_PeerFunc(SBN_PeerRecord_t *PeerRec, void *Arg)
@@ -154,6 +204,8 @@ void Test_SBN_ForEachConfiguredPeer(void)
     Count = 0;
 
     UtAssert_INT32_EQ(SBN_ForEachConfiguredPeer(UT_SBN_PeerFunc, &Count), SBN_SUCCESS);
+    UT_SetDeferredRetcode(UT_KEY(UT_SBN_PeerFunc), 1, SBN_FINISHED);
+    UtAssert_INT32_EQ(SBN_ForEachConfiguredPeer(UT_SBN_PeerFunc, &Count), SBN_FINISHED);
 }
 
 /**
@@ -179,6 +231,8 @@ void Test_SBN_ForEachConfiguredNet(void)
     Count = 0;
 
     UtAssert_INT32_EQ(SBN_ForEachConfiguredNet(UT_SBN_NetFunc, &Count), SBN_SUCCESS);
+    UT_SetDeferredRetcode(UT_KEY(UT_SBN_NetFunc), 1, SBN_FINISHED);
+    UtAssert_INT32_EQ(SBN_ForEachConfiguredNet(UT_SBN_NetFunc, &Count), SBN_FINISHED);
 }
 
 
