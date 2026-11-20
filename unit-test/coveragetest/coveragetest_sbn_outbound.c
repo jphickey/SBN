@@ -18,6 +18,7 @@
 
 #include "sbn_coveragetest_common.h"
 #include "sbn_outbound.h"
+#include "sbn_filter.h"
 #include "sbn_error.h"
 
 void Test_SBN_Outbound_SendToPeer(void)
@@ -62,6 +63,24 @@ void Test_SBN_Outbound_GetMsg(void)
     UT_SetDataBuffer(UT_KEY(CFE_MSG_GetSize), &MsgSz, sizeof(MsgSz), false);
 
     UtAssert_INT32_EQ(SBN_Outbound_GetMsg(&BufD, PeerPipe, 100), SBN_SUCCESS);
+
+    UT_SetDeferredRetcode(UT_KEY(CFE_SB_ReceiveBuffer), 1, CFE_SB_TIME_OUT);
+    UtAssert_INT32_EQ(SBN_Outbound_GetMsg(&BufD, PeerPipe, 100), SBN_IF_EMPTY);
+
+    UT_SetDeferredRetcode(UT_KEY(CFE_SB_ReceiveBuffer), 1, CFE_SB_NO_MESSAGE);
+    UtAssert_INT32_EQ(SBN_Outbound_GetMsg(&BufD, PeerPipe, 100), SBN_IF_EMPTY);
+
+    UT_SetDeferredRetcode(UT_KEY(CFE_SB_ReceiveBuffer), 1, CFE_SB_BAD_ARGUMENT);
+    UtAssert_INT32_EQ(SBN_Outbound_GetMsg(&BufD, PeerPipe, 100), SBN_ERROR);
+
+    UT_SetDataBuffer(UT_KEY(CFE_SB_ReceiveBuffer), &BufPtr, sizeof(BufPtr), false);
+    UT_SetDeferredRetcode(UT_KEY(CFE_MSG_GetSize), 1, CFE_SB_BAD_ARGUMENT);
+    UtAssert_INT32_EQ(SBN_Outbound_GetMsg(&BufD, PeerPipe, 100), SBN_ERROR);
+
+    UT_SetDataBuffer(UT_KEY(CFE_SB_ReceiveBuffer), &BufPtr, sizeof(BufPtr), false);
+    UT_SetDataBuffer(UT_KEY(CFE_MSG_GetSize), &MsgSz, sizeof(MsgSz), false);
+    BufD.MaxDataSz = sizeof(Msg) - 1;
+    UtAssert_INT32_EQ(SBN_Outbound_GetMsg(&BufD, PeerPipe, 100), SBN_ERROR);
 }
 
 void Test_SBN_Outbound_IsScheduled(void)
@@ -85,9 +104,47 @@ void Test_SBN_Outbound_ServicePeer(void)
      */
     SBN_PeerRecord_t *PeerRec = &SBN_AppData.PeerRecords[0];
     SBN_BufferDesc_t BufD;
+    CFE_SB_Buffer_t SbBuf;
+    CFE_MSG_Message_t Msg;
+    CFE_SB_Buffer_t *BufPtr;
+    CFE_MSG_Size_t MsgSz;
 
     memset(&BufD, 0, sizeof(BufD));
+    memset(&SbBuf, 0, sizeof(SbBuf));
+    memset(&Msg, 0xA5, sizeof(Msg));
+    BufPtr = &SbBuf;
+    MsgSz = sizeof(SbBuf.Msg);
 
+    BufD.MaxDataSz = sizeof(Msg);
+    BufD.DataPtr = &Msg;
+
+    UtAssert_VOIDCALL(SBN_Outbound_ServicePeer(PeerRec, &BufD));
+
+    PeerRec->Intf.Connected = true;
+    PeerRec->Sched.OutboundAutoReschedule = true;
+    PeerRec->Intf.Pipe = CFE_SB_PIPEID_C(CFE_ResourceId_FromInteger(1));
+    UT_SetDeferredRetcode(UT_KEY(CFE_SB_ReceiveBuffer), 1, CFE_SB_NO_MESSAGE);
+    UtAssert_VOIDCALL(SBN_Outbound_ServicePeer(PeerRec, &BufD));
+
+    UT_SetDeferredRetcode(UT_KEY(CFE_SB_ReceiveBuffer), 1, CFE_SB_TIME_OUT);
+    UtAssert_VOIDCALL(SBN_Outbound_ServicePeer(PeerRec, &BufD));
+
+    UT_SetDeferredRetcode(UT_KEY(CFE_SB_ReceiveBuffer), 1, CFE_SB_BAD_ARGUMENT);
+    UtAssert_VOIDCALL(SBN_Outbound_ServicePeer(PeerRec, &BufD));
+
+    UT_SetDataBuffer(UT_KEY(CFE_SB_ReceiveBuffer), &BufPtr, sizeof(BufPtr), false);
+    UT_SetDeferredRetcode(UT_KEY(CFE_MSG_GetSize), 1, CFE_SB_BAD_ARGUMENT);
+    UtAssert_VOIDCALL(SBN_Outbound_ServicePeer(PeerRec, &BufD));
+
+    UT_SetDataBuffer(UT_KEY(CFE_SB_ReceiveBuffer), &BufPtr, sizeof(BufPtr), false);
+    UT_SetDataBuffer(UT_KEY(CFE_MSG_GetSize), &MsgSz, sizeof(MsgSz), false);
+    UT_SetDeferredRetcode(UT_KEY(CFE_SB_ReceiveBuffer), 2, CFE_SB_TIME_OUT);
+    UtAssert_VOIDCALL(SBN_Outbound_ServicePeer(PeerRec, &BufD));
+
+    UT_SetDataBuffer(UT_KEY(CFE_SB_ReceiveBuffer), &BufPtr, sizeof(BufPtr), false);
+    UT_SetDataBuffer(UT_KEY(CFE_MSG_GetSize), &MsgSz, sizeof(MsgSz), false);
+    UT_SetDeferredRetcode(UT_KEY(CFE_SB_ReceiveBuffer), 2, CFE_SB_TIME_OUT);
+    UT_SetDeferredRetcode(UT_KEY(SBN_Filter_Mutation), 1, SBN_IF_EMPTY);
     UtAssert_VOIDCALL(SBN_Outbound_ServicePeer(PeerRec, &BufD));
 }
 

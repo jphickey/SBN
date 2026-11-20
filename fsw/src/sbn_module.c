@@ -23,30 +23,6 @@
 #include "sbn_module.h"
 #include "sbn_module_bindings.h"
 
-const SBN_ModuleBindingEntry_t *SBN_ModuleBinding_FindByModName(const char                     *ModName,
-                                                                const SBN_ModuleBindingEntry_t *BindingList)
-{
-    const SBN_ModuleBindingEntry_t *Entry;
-
-    Entry = BindingList;
-    while (Entry != NULL)
-    {
-        if (Entry->ModName == NULL)
-        {
-            /* end of list */
-            Entry = NULL;
-            break;
-        }
-        if (strcmp(Entry->ModName, ModName) == 0)
-        {
-            /* found a match */
-            break;
-        }
-        ++Entry;
-    }
-    return Entry;
-}
-
 const SBN_ModuleBindingEntry_t *SBN_ModuleBinding_FindBySymName(const char                     *SymName,
                                                                 const SBN_ModuleBindingEntry_t *BindingList)
 {

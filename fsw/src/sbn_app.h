@@ -227,6 +227,16 @@ static inline SBN_NetInterface_t *SBN_Net_GetIntfData(SBN_NetRecord_t *NetRec)
     }
 }
 
+/**
+ * This function waits for the scheduler (SCH) to wake this code up, so that
+ * nothing transpires until the cFE is fully operational.
+ *
+ * @param[in] iTimeOut The time to wait for the scheduler to notify this code.
+ * @return CFE_SUCCESS on success, otherwise an error value.
+ */
+SBN_Status_t SBN_WaitForWakeup(int32 iTimeOut);
+SBN_Status_t SBN_Cleanup(void);
+
 /*
  * ~~~~~~~~~~~~ MODULE INTERFACE METHODS ~~~~~~~~~~~~~~~
  *

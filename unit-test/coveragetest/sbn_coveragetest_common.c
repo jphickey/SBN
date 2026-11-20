@@ -124,8 +124,8 @@ void UT_SBN_AddPeerConfEntry(SBN_ConfTbl_t *Tbl, uint8 Pos, uint8 Net, const cha
 {
     SBN_Peer_Entry_t *PeerEnt = &Tbl->Peers[Pos];
 
-    PeerEnt->ProcessorID  = 1 + Pos;
-    PeerEnt->SpacecraftID = 41;
+    PeerEnt->ProcessorID  = SBN_UT_LOCAL_PROCESSOR_ID + Pos;
+    PeerEnt->SpacecraftID = SBN_UT_SPACECRAFT_ID;
     PeerEnt->NetNum       = Net;
     if (Proto != NULL)
     {
@@ -297,7 +297,7 @@ SBN_ConfTbl_t NominalTbl = {.ProtocolModules = {{.Name        = "UDP",
 SBN_ConfTbl_t *NominalTblPtr = &NominalTbl;
 
 /********************************** globals ************************************/
-SBN_ProcessorID_t    ProcessorID  = SBN_UT_PEER_PROCESSOR_ID;
+SBN_ProcessorID_t    ProcessorID  = SBN_UT_LOCAL_PROCESSOR_ID;
 SBN_SpacecraftID_t   SpacecraftID = SBN_UT_SPACECRAFT_ID;
 SBN_NetInterface_t  *NetPtr       = NULL;
 SBN_PeerInterface_t *PeerPtr      = NULL;
@@ -397,16 +397,13 @@ void START_fn(const char *func, int line)
     NetPtr->Configured    = 1;
     NetPtr->PeerIds[0]    = PeerRec->PeerId;
 
-    PeerPtr->ProcessorID  = ProcessorID;
-    PeerPtr->SpacecraftID = SpacecraftID;
+    PeerPtr->ProcessorID  = SBN_UT_PEER_PROCESSOR_ID;
+    PeerPtr->SpacecraftID = SBN_UT_SPACECRAFT_ID;
     PeerPtr->Net          = NetPtr;
     NetPtr->IfOps         = &IfOps;
 
     UT_SetHookFunction(UT_KEY(OS_SymbolLookup), SymLookHook, NULL);
     UT_SetHandlerFunction(UT_KEY(OS_CondVarWait), UT_CondVarWait_Worker_Handler, NULL);
-
-    UT_SetDataBuffer(UT_KEY(CFE_TBL_GetAddress), &NominalTblPtr, sizeof(NominalTblPtr), false);
-    UT_SetDeferredRetcode(UT_KEY(CFE_TBL_GetAddress), 1, CFE_TBL_INFO_UPDATED);
 
     UT_SetDefaultReturnValue(UT_KEY(CFE_PSP_GetProcessorId), ProcessorID);
     UT_SetDefaultReturnValue(UT_KEY(CFE_PSP_GetSpacecraftId), SpacecraftID);

@@ -175,7 +175,7 @@ void SBN_Outbound_ServicePeer(SBN_PeerRecord_t *PeerRec, SBN_BufferDesc_t *BufD)
     }
 
     /* Now move on to data passing */
-    if (PeerRec->Sched.InboundAutoReschedule)
+    if (PeerRec->Sched.OutboundAutoReschedule)
     {
         /* Emulate a dedicated task by pending on the pipe, but not forever */
         /* Notably this needs to pause looking for data to check subscriptions */

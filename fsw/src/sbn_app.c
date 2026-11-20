@@ -120,7 +120,8 @@ bool SBN_UnpackMsg(void               *SBNBuf,
         return true;
     } /* end if */
 
-    if (*MsgSzPtr < 0 || *MsgSzPtr > CFE_MISSION_SB_MAX_SB_MSG_SIZE)
+    /* MsgSz is unsigned, no need to check for <0 */
+    if (*MsgSzPtr > CFE_MISSION_SB_MAX_SB_MSG_SIZE)
     {
         return false;
     } /* end if */
@@ -220,7 +221,7 @@ static SBN_Status_t SBN_InitInterfaces(void)
  * @param[in] iTimeOut The time to wait for the scheduler to notify this code.
  * @return CFE_SUCCESS on success, otherwise an error value.
  */
-static SBN_Status_t SBN_WaitForWakeup(int32 iTimeOut)
+SBN_Status_t SBN_WaitForWakeup(int32 iTimeOut)
 {
     CFE_Status_t           CFE_Status;
     SBN_Status_t           SBN_Status;
@@ -1009,7 +1010,7 @@ static SBN_Status_t SBN_Init(void)
     return Status;
 }
 
-static SBN_Status_t SBN_Cleanup(void)
+SBN_Status_t SBN_Cleanup(void)
 {
     SBN_Status_t Status;
 
